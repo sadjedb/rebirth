@@ -1,0 +1,399 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  STAFF
+  MANAGER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ProductType {
+  PHYSICAL
+  DIGITAL
+  SUBSCRIPTION
+}
+
+enum ProductMediaType {
+  IMAGE
+  VIDEO
+}
+
+enum ProductIcon {
+  jacket
+  trouser
+  tee
+}
+
+/// One of three independent lifecycle dimensions an Order tracks — see
+/// PaymentStatus and FulfillmentStatus. Transition rules live in
+/// lib/orders/status.ts (Phase 5), not here; this enum is just the value
+/// set.
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+}
+
+enum FulfillmentStatus {
+  UNFULFILLED
+  PARTIALLY_FULFILLED
+  FULFILLED
+}
+
+/// Only CASH_ON_DELIVERY exists today. An enum (not a free-text column)
+/// so a future payment gateway integration is additive here rather than
+/// a data-quality problem waiting to happen.
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+}
+
+/// Only USD exists today. Stamped onto the order at checkout — if the
+/// store's active currency ever changes, historical orders keep whatever
+/// they were actually placed in, matching every other immutable snapshot
+/// on Order/OrderItem.
+enum CurrencyCode {
+  USD
+}
+
+/// Every order today is CUSTOMER (via checkout). ADMIN exists so a future
+/// "create manual order" admin flow is additive — no migration required
+/// when that's built, just a new code path that sets placedBy: ADMIN.
+enum PlacedBy {
+  CUSTOMER
+  ADMIN
+}
+
+enum AddressType {
+  SHIPPING
+  BILLING
+}
+
+/// Deliberately flat for now — no parentId/hierarchy. Extend later if needed.
+model Category {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  /// Manual sort order for storefront/admin category lists. Not surfaced
+  /// in any UI yet — exists now so ordering doesn't need a migration later.
+  displayOrder Int       @default(0)
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  products Product[]
+
+  @@index([deletedAt])
+}
+
+model Collection {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  products Product[]
+
+  @@index([deletedAt])
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  products Product[]
+
+  @@index([deletedAt])
+}
+
+/// Supports images and videos from day one. `providerId` is whatever the
+/// active media provider (Cloudinary today) needs to delete/transform this
+/// asset later without an extra lookup — opaque, never parsed. `thumbnailUrl`
+/// is only populated for VIDEO (poster frame).
+model ProductMedia {
+  id           String           @id @default(cuid())
+  productId    String
+  type         ProductMediaType @default(IMAGE)
+  url          String
+  thumbnailUrl String?
+  providerId   String
+  altText      String?
+  position     Int              @default(0)
+  createdAt    DateTime         @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model Product {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String
+
+  shortDescription String?
+  description      String  @db.Text
+
+  status ProductStatus @default(DRAFT)
+  /// Not acted on yet (no digital delivery / subscription billing built),
+  /// but costs nothing to have now vs. a non-nullable-column migration later.
+  type   ProductType   @default(PHYSICAL)
+
+  /// Cosmetic storefront label (e.g. "MN-014 / BLK") — distinct from `sku`,
+  /// which is the real inventory identifier admin manages. Keeping both:
+  /// they serve different audiences and will very likely diverge.
+  code String
+  sku  String? @unique
+
+  price          Int
+  compareAtPrice Int?
+  costPrice      Int?
+
+  stock                     Int     @default(0)
+  lowStockThreshold         Int?
+  trackInventory            Boolean @default(true)
+  continueSellingOutOfStock Boolean @default(false)
+
+  categoryId String?
+  category   Category?    @relation(fields: [categoryId], references: [id])
+  collections Collection[]
+  tags        Tag[]
+  media       ProductMedia[]
+
+  /// Fallback placeholder system (CSS tone panel + line icon), used by the
+  /// storefront whenever a product has zero real ProductMedia rows.
+  /// Nullable — a product created via the admin with real media never
+  /// needs this; only relevant for the pre-admin storefront-only products.
+  icon ProductIcon?
+  tone String?
+
+  /// No variant model yet (see Module 1 architecture notes) — a future
+  /// Variants module would introduce ProductVariant and migrate
+  /// OrderItem off productId+size-as-string onto variantId.
+  details String[]
+  sizes   String[]
+
+  metaTitle       String?
+  metaDescription String?
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  viewCount  Int @default(0)
+  salesCount Int @default(0)
+
+  orderItems OrderItem[]
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+/// Infrastructure, not a feature — every mutating admin action writes here
+/// via withAuditedMutation(). actorEmail is a snapshot so history reads
+/// correctly even if the acting user is later deleted.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+
+  orders Order[]
+
+  @@index([role])
+}
+
+/// `id` is an opaque cuid, same as every other model — it's intentionally
+/// not human-facing. `orderNumber` below is the sequential, human-readable
+/// label; see its doc comment for why the two are kept separate.
+model Order {
+  id String @id @default(cuid())
+
+  /// Sequential, human-facing label ("Order #1042"). Deliberately NOT used
+  /// as a lookup key anywhere unauthenticated — a public route keyed on a
+  /// sequential integer is enumerable. `id` (opaque cuid) is the only
+  /// lookup key for the storefront confirmation route; orderNumber is
+  /// display-only, shown once the viewer already has legitimate access
+  /// (the admin, or the logged-in customer on their own order).
+  orderNumber Int @unique @default(autoincrement())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  /// CUSTOMER for every order today (checkout). Exists so a future
+  /// "create manual order" admin flow needs no schema change, just a new
+  /// code path that sets this to ADMIN.
+  placedBy PlacedBy @default(CUSTOMER)
+
+  /// Snapshotted at checkout, same immutability rule as OrderItem's
+  /// product snapshot below — a later profile edit must never rewrite
+  /// what was on the order when it was placed.
+  firstName String
+  lastName  String
+  email     String
+  phone     String
+
+  currency CurrencyCode @default(USD)
+
+  /// Sum of OrderItem.lineTotal, pre order-level discount.
+  subtotal Int
+  /// Order-level discount (e.g. a coupon applied to the whole order).
+  discountTotal Int @default(0)
+  taxTotal      Int @default(0)
+  shippingTotal Int @default(0)
+  /// subtotal - discountTotal + taxTotal + shippingTotal, computed once
+  /// at creation and persisted — never recomputed on read. A future fix
+  /// to the total formula must not silently rewrite what a past customer
+  /// was actually charged.
+  total Int
+
+  paymentMethod     PaymentMethod     @default(CASH_ON_DELIVERY)
+  paymentStatus     PaymentStatus     @default(PENDING)
+  fulfillmentStatus FulfillmentStatus @default(UNFULFILLED)
+  /// Overall order lifecycle. Independent from paymentStatus/
+  /// fulfillmentStatus — a paid order can still be unfulfilled, and vice
+  /// versa. Transition rules for all three live in lib/orders/status.ts.
+  status OrderStatus @default(PENDING)
+
+  /// Customer-submitted at checkout (delivery instructions, etc.).
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Stamped when the corresponding status transition fires. Duplicates
+  /// what the (AuditLog-backed) timeline already records, but that's a
+  /// deliberate, narrow exception for query performance at scale —
+  /// e.g. "orders completed this month" needs an indexed column scan,
+  /// not a reverse scan of AuditLog for the right action per order.
+  paidAt      DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  items     OrderItem[]
+  addresses OrderAddress[]
+
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([fulfillmentStatus])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([email])
+}
+
+/// Billing and/or shipping address for an order. A separate child model
+/// rather than duplicated `billing*`/`shipping*` columns on Order — same
+/// "repeating shape becomes its own model" precedent as ProductMedia.
+/// Billing is optional: if checkout doesn't collect a separate billing
+/// address, no BILLING row exists and reads fall back to SHIPPING.
+model OrderAddress {
+  id      String      @id @default(cuid())
+  orderId String
+  type    AddressType
+
+  firstName    String
+  lastName     String
+  company      String?
+  phone        String?
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  region       String
+  postalCode   String
+  country      String
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, type])
+  @@index([orderId])
+}
+
+/// Snapshots product details at time of purchase (name/price/etc.) so a
+/// later product edit or deletion never rewrites what a customer was
+/// actually charged.
+model OrderItem {
+  id        String      @id @default(cuid())
+  orderId   String
+  /// Nullable + SetNull on delete: every field an order actually needs
+  /// (name/code/price/tone/icon/size/quantity) is snapshotted below: this
+  /// is only a convenience link back to the current product page. A
+  /// permanently-deleted product must never be blocked by, or destroy,
+  /// historical order records.
+  productId String?
+  slug      String
+  name      String
+  code      String
+  sku       String?
+  price     Int
+  /// Per-line discount amount, snapshotted.
+  discount  Int @default(0)
+  /// (price - discount) * quantity, computed once at creation and
+  /// persisted — never recomputed on read, same immutability rule as
+  /// Order.total.
+  lineTotal Int
+  tone      String
+  icon      ProductIcon
+  size      String
+  quantity  Int
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  topic     String
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+}
