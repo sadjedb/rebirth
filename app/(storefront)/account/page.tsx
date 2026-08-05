@@ -5,6 +5,7 @@ import { Nav } from "@/components/layout/Nav";
 import { Footer } from "@/components/layout/Footer";
 import { getSession } from "@/lib/session";
 import { getOrdersByUserId, formatOrderNumber, customerStatusLabel } from "@/lib/orders/storefront";
+import { PAYMENT_STATUS_META, FULFILLMENT_STATUS_META } from "@/lib/orders/status";
 import { formatMoney } from "@/lib/money";
 import { logout } from "@/app/(storefront)/account/actions";
 import { brand } from "@/config/brand";
@@ -93,7 +94,11 @@ export default async function AccountPage() {
                         <p className="font-mono text-sm text-sumi">
                           {formatMoney(order.total, order.currency)}
                         </p>
-                        <p className="text-xs text-stone mt-1">{customerStatusLabel(order.status)}</p>
+                        <p className="text-xs text-stone mt-1">
+                          {customerStatusLabel(order.status)} ·{" "}
+                          {PAYMENT_STATUS_META[order.paymentStatus].label} ·{" "}
+                          {FULFILLMENT_STATUS_META[order.fulfillmentStatus].label}
+                        </p>
                       </div>
                     </Link>
                   );

@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { Nav } from "@/components/layout/Nav";
 import { Footer } from "@/components/layout/Footer";
 import { Seal } from "@/components/ui/Seal";
-import { getOrderById, formatOrderNumber } from "@/lib/orders/storefront";
+import { getOrderById, formatOrderNumber, customerStatusLabel } from "@/lib/orders/storefront";
+import { PAYMENT_STATUS_META, FULFILLMENT_STATUS_META } from "@/lib/orders/status";
 import { formatMoney } from "@/lib/money";
 import { brand } from "@/config/brand";
 
@@ -43,6 +44,26 @@ export default async function OrderConfirmationPage({
           </p>
 
           <div className="border border-stone/20 mt-12 text-left">
+            <div className="px-6 py-5 border-b border-stone/20">
+              <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-stone mb-3">
+                Status
+              </p>
+              <div className="flex items-center justify-between text-sm py-1">
+                <span className="text-stone">Order</span>
+                <span className="text-sumi">{customerStatusLabel(order.status)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm py-1">
+                <span className="text-stone">Payment</span>
+                <span className="text-sumi">{PAYMENT_STATUS_META[order.paymentStatus].label}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm py-1">
+                <span className="text-stone">Fulfillment</span>
+                <span className="text-sumi">
+                  {FULFILLMENT_STATUS_META[order.fulfillmentStatus].label}
+                </span>
+              </div>
+            </div>
+
             <div className="px-6 py-5 border-b border-stone/20">
               <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-stone mb-1">
                 Delivering to
