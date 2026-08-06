@@ -22,7 +22,8 @@ export type Capability =
   | "products:permanently_delete" // hard delete — SUPER_ADMIN only
   | "orders:view"
   | "orders:edit"
-  | "orders:cancel";
+  | "orders:cancel"
+  | "customers:view";
 
 /**
  * Role → capability lookup. This is the ONLY place role/capability logic
@@ -33,7 +34,7 @@ export type Capability =
  */
 const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
   CUSTOMER: [],
-  STAFF: ["admin:access", "dashboard:view", "products:view", "orders:view"],
+  STAFF: ["admin:access", "dashboard:view", "products:view", "orders:view", "customers:view"],
   MANAGER: [
     "admin:access",
     "dashboard:view",
@@ -42,6 +43,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "products:edit",
     "orders:view",
     "orders:edit",
+    "customers:view",
   ],
   ADMIN: [
     "admin:access",
@@ -55,6 +57,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "orders:view",
     "orders:edit",
     "orders:cancel",
+    "customers:view",
   ],
   SUPER_ADMIN: [
     "admin:access",
@@ -70,6 +73,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "orders:view",
     "orders:edit",
     "orders:cancel",
+    "customers:view",
   ],
 };
 

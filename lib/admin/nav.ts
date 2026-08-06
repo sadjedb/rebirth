@@ -35,7 +35,7 @@ export const ADMIN_NAV: NavItem[] = [
     href: "/admin/customers",
     implemented: false,
     children: [
-      { label: "Customers", href: "/admin/customers", implemented: false },
+      { label: "Customers", href: "/admin/customers", implemented: true },
       { label: "Customer Groups", href: "/admin/customers/groups", implemented: false },
     ],
   },
