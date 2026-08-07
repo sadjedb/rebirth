@@ -322,7 +322,15 @@ model Order {
   @@index([status])
   @@index([paymentStatus])
   @@index([fulfillmentStatus])
-  @@index([userId])
+  /// Composite, not two separate indexes: Customer Detail's recent-orders
+  /// query (lib/customers/detail.ts) filters by userId and sorts by
+  /// createdAt — this index serves that directly (indexed retrieval in
+  /// order, no separate in-memory sort step). The leading column alone
+  /// still serves userId-only lookups (e.g. the groupBy in
+  /// lib/customers/admin.ts), so a standalone userId index alongside this
+  /// one would just be redundant write overhead with no query-time
+  /// benefit.
+  @@index([userId, createdAt])
   @@index([createdAt])
   @@index([email])
 }

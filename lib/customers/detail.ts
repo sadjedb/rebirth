@@ -52,10 +52,13 @@ export type CustomerDetail = {
 };
 
 export async function getCustomerDetail(id: string): Promise<CustomerDetail | null> {
-  const user: { id: string; firstName: string; lastName: string; email: string; createdAt: Date } | null =
+  // id isn't selected: it's already known (the function parameter), and
+  // the WHERE clause guarantees any returned row has this exact id — no
+  // need to select and re-read a field we already have.
+  const user: { firstName: string; lastName: string; email: string; createdAt: Date } | null =
     await prisma.user.findFirst({
       where: { id, role: "CUSTOMER" },
-      select: { id: true, firstName: true, lastName: true, email: true, createdAt: true },
+      select: { firstName: true, lastName: true, email: true, createdAt: true },
     });
   if (!user) return null;
 
@@ -97,7 +100,7 @@ export async function getCustomerDetail(id: string): Promise<CustomerDetail | nu
   const hasMoreOrders = recentOrders.length > RECENT_ORDERS_LIMIT;
 
   return {
-    id: user.id,
+    id,
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,

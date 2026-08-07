@@ -25,6 +25,13 @@ it's made, not just in this summary).
 Also as of Phase 4: `next.config.ts` sets a 15MB Server Actions body size
 limit (product photos exceed the 1MB default).
 
+As of Module 3 (Customers), Phase 3 query-efficiency review: `Order`'s
+standalone `userId` index was replaced with a composite `(userId,
+createdAt)` index — Customer Detail's recent-orders query filters by
+`userId` and sorts by `createdAt`, which a composite index serves
+directly instead of an indexed filter followed by an in-memory sort. See
+`prisma/migrations/20260601000000_order_userid_createdat_index/migration.sql`.
+
 ## Important: what's been verified vs. what hasn't
 
 I built and ran this against a real local Postgres instance to verify the
@@ -48,7 +55,10 @@ it to a real database in this environment the way I could for
 instance and confirm it applies cleanly before treating it as verified —
 I'd flag this even if you hadn't asked, since "assume every approved
 implementation is correct" shouldn't extend to a migration I've only
-proofread and never executed.
+proofread and never executed. **Same caveat applies to the Module 3
+index migration** (`20260601000000_order_userid_createdat_index`) — it's
+two straightforward, standard statements (`DROP INDEX`/`CREATE INDEX`),
+proofread carefully, but not run against a real database either.
 
 Data-layer files: `lib/products/{storefront,admin,availability}.ts` and
 `lib/orders/{storefront,admin}.ts` (Phase 3) both use the feature-first
