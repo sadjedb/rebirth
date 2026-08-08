@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { requirePageAccess } from "@/lib/admin/auth";
 import { can } from "@/lib/admin/permissions";
 import { getReviewDetail } from "@/lib/reviews/detail";
+import { getReviewTimeline } from "@/lib/reviews/timeline";
 import { Breadcrumbs } from "@/components/admin/layout/Breadcrumbs";
 import { ReviewContentCard } from "@/app/admin/reviews/components/cards/ReviewContentCard";
 import { ReviewerCard } from "@/app/admin/reviews/components/cards/ReviewerCard";
 import { PurchaseCard } from "@/app/admin/reviews/components/cards/PurchaseCard";
 import { ModerationCard } from "@/app/admin/reviews/components/cards/ModerationCard";
+import { ReviewTimeline } from "@/app/admin/reviews/components/ReviewTimeline";
 import { brand } from "@/config/brand";
 
 export const metadata: Metadata = {
@@ -22,7 +24,7 @@ export default async function ReviewDetailPage({
   const user = await requirePageAccess("reviews:view");
 
   const { id } = await params;
-  const review = await getReviewDetail(id);
+  const [review, timeline] = await Promise.all([getReviewDetail(id), getReviewTimeline(id)]);
 
   if (!review) notFound();
 
@@ -50,6 +52,7 @@ export default async function ReviewDetailPage({
         <ReviewContentCard review={review} />
         <ReviewerCard review={review} />
         <PurchaseCard review={review} />
+        <ReviewTimeline entries={timeline} />
       </div>
     </div>
   );
