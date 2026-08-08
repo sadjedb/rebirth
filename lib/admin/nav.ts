@@ -64,7 +64,7 @@ export const ADMIN_NAV: NavItem[] = [
     ],
   },
   { label: "Media Library", href: "/admin/media", implemented: false },
-  { label: "Reviews", href: "/admin/reviews", implemented: false },
+  { label: "Reviews", href: "/admin/reviews", implemented: true },
   { label: "Shipping", href: "/admin/shipping", implemented: false },
   { label: "Taxes", href: "/admin/taxes", implemented: false },
   { label: "Analytics", href: "/admin/analytics", implemented: false },

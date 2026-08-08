@@ -23,7 +23,9 @@ export type Capability =
   | "orders:view"
   | "orders:edit"
   | "orders:cancel"
-  | "customers:view";
+  | "customers:view"
+  | "reviews:view"
+  | "reviews:moderate";
 
 /**
  * Role → capability lookup. This is the ONLY place role/capability logic
@@ -34,7 +36,14 @@ export type Capability =
  */
 const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
   CUSTOMER: [],
-  STAFF: ["admin:access", "dashboard:view", "products:view", "orders:view", "customers:view"],
+  STAFF: [
+    "admin:access",
+    "dashboard:view",
+    "products:view",
+    "orders:view",
+    "customers:view",
+    "reviews:view",
+  ],
   MANAGER: [
     "admin:access",
     "dashboard:view",
@@ -44,6 +53,8 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "orders:view",
     "orders:edit",
     "customers:view",
+    "reviews:view",
+    "reviews:moderate",
   ],
   ADMIN: [
     "admin:access",
@@ -58,6 +69,8 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "orders:edit",
     "orders:cancel",
     "customers:view",
+    "reviews:view",
+    "reviews:moderate",
   ],
   SUPER_ADMIN: [
     "admin:access",
@@ -74,6 +87,8 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "orders:edit",
     "orders:cancel",
     "customers:view",
+    "reviews:view",
+    "reviews:moderate",
   ],
 };
 

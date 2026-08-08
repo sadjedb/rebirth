@@ -8,6 +8,8 @@ import { getOrdersByUserId, formatOrderNumber, customerStatusLabel } from "@/lib
 import { PAYMENT_STATUS_META, FULFILLMENT_STATUS_META } from "@/lib/orders/status";
 import { formatMoney } from "@/lib/money";
 import { logout } from "@/app/(storefront)/account/actions";
+import { getEligibleOrderItemsForReview } from "@/lib/reviews/eligibility";
+import { EligibleReviewsSection } from "@/app/(storefront)/account/reviews/EligibleReviewsSection";
 import { brand } from "@/config/brand";
 
 export const metadata: Metadata = {
@@ -20,6 +22,7 @@ export default async function AccountPage() {
   if (!user) redirect("/login?next=/account");
 
   const orders = await getOrdersByUserId(user.id);
+  const eligibleForReview = await getEligibleOrderItemsForReview(user.id);
 
   return (
     <>
@@ -106,6 +109,8 @@ export default async function AccountPage() {
               </div>
             )}
           </section>
+
+          <EligibleReviewsSection items={eligibleForReview} />
         </div>
       </main>
       <Footer />

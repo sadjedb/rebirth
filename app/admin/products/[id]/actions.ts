@@ -250,6 +250,18 @@ export async function permanentlyDeleteProduct(id: string): Promise<SimpleAction
     return { success: false, error: "Only trashed products can be permanently deleted." };
   }
 
+  // Module 4 (Reviews): Review.productId is a required relation with no
+  // SetNull — a review's entire subject is the product it's about, so
+  // this is checked before the delete rather than letting the database's
+  // RESTRICT constraint surface as a raw error.
+  const reviewCount = await prisma.review.count({ where: { productId: id } });
+  if (reviewCount > 0) {
+    return {
+      success: false,
+      error: `This product has ${reviewCount} review${reviewCount === 1 ? "" : "s"} and can't be permanently deleted.`,
+    };
+  }
+
   return withAuditedMutation(
     "products:permanently_delete",
     { action: "product.permanently_delete", entityType: "Product" },

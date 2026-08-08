@@ -91,6 +91,20 @@ enum AddressType {
   BILLING
 }
 
+/// PENDING is the only reachable starting state (see lib/reviews/status.ts,
+/// Module 4 Phase 4, for the transition table — not implemented until
+/// Phase 4; Phase 2 only ever creates rows as PENDING and reads status for
+/// display/filtering). SPAM is kept distinct from REJECTED per the Module
+/// 4 architecture — both are terminal-ish outcomes reachable only from
+/// PENDING or APPROVED, and both can be reconsidered by moving back to
+/// PENDING, but never converted directly into each other.
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SPAM
+}
+
 /// Deliberately flat for now — no parentId/hierarchy. Extend later if needed.
 model Category {
   id           String    @id @default(cuid())
@@ -210,6 +224,7 @@ model Product {
   salesCount Int @default(0)
 
   orderItems OrderItem[]
+  reviews    Review[]
 
   @@index([status])
   @@index([categoryId])
@@ -244,7 +259,8 @@ model User {
   role         Role     @default(CUSTOMER)
   createdAt    DateTime @default(now())
 
-  orders Order[]
+  orders  Order[]
+  reviews Review[]
 
   @@index([role])
 }
@@ -392,9 +408,67 @@ model OrderItem {
 
   order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Not @unique on Review.orderItemId — see Review's own doc comment —
+  /// so this is structurally a list even though in practice a given
+  /// OrderItem never ends up with more than one Review (the reviewer's
+  /// own (userId, productId) is what's actually unique).
+  reviews Review[]
 
   @@index([orderId])
   @@index([productId])
+}
+
+/// Module 4 (Reviews). A Review is anchored to a specific completed
+/// purchase (orderItemId) for eligibility/provenance, but the actual
+/// duplicate-review rule is @@unique([userId, productId]) below — not
+/// orderItemId. A customer who repurchases the same product still gets
+/// only one Review; orderItemId records which purchase substantiated it,
+/// nothing more. See the Module 4 architecture notes for why productId
+/// is intentionally NOT nullable here (unlike OrderItem.productId):
+/// a Review's entire subject is the product it's about, so permanently
+/// deleting a Product is blocked at the application layer while Reviews
+/// for it exist, rather than letting the relation null out.
+model Review {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+
+  /// 1–5. Also enforced at the database level by a CHECK constraint added
+  /// by hand in this migration (Prisma's schema DSL has no native
+  /// range-constraint attribute) — see migration.sql for the exact SQL.
+  rating Int
+  body   String @db.Text
+
+  status ReviewStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One review per customer per product — not per OrderItem. See the
+  /// model's own doc comment above.
+  @@unique([userId, productId])
+  /// Serves the storefront product-page query directly: filter by
+  /// productId + status, sorted createdAt — the highest-frequency Review
+  /// query (public, per product-page view).
+  @@index([productId, status, createdAt])
+  /// Serves the admin moderation queue when it's NOT scoped to one
+  /// product (e.g. "all PENDING reviews"). Not subsumed by the composite
+  /// above — that index's leading column is productId, so a status-only
+  /// filter can't use it.
+  @@index([status, createdAt])
+  /// Serves the eligibility query's reverse-relation check (`reviews:
+  /// { none: {} }` on OrderItem) — mirrors OrderItem's own explicit
+  /// @@index([orderId]) / @@index([productId]) for the same reason:
+  /// this project indexes FK columns explicitly rather than relying on
+  /// an implicit one.
+  @@index([orderItemId])
 }
 
 model ContactMessage {
