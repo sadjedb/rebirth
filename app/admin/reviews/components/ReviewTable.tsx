@@ -12,9 +12,12 @@ import type { AdminReviewListItem } from "@/lib/reviews/admin";
 function ReviewerCell({ review }: { review: AdminReviewListItem }) {
   return (
     <div className="min-w-0">
-      <p className="text-admin-fg truncate">
+      <Link
+        href={`/admin/reviews/${review.id}`}
+        className="text-admin-fg hover:text-admin-accent transition-colors truncate block"
+      >
         {review.reviewer.firstName} {review.reviewer.lastName}
-      </p>
+      </Link>
       <p className="text-xs text-admin-muted truncate">{review.reviewer.email}</p>
     </div>
   );
