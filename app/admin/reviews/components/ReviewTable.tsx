@@ -7,6 +7,13 @@ import { DataTable } from "@/components/admin/ui/DataTable";
 import { DataTableColumnHeader } from "@/components/admin/ui/DataTableColumnHeader";
 import { EmptyState } from "@/components/admin/ui/EmptyState";
 import { ReviewStatusBadge } from "@/app/admin/reviews/components/ReviewStatusBadge";
+import type { BulkAction } from "@/components/admin/ui/BulkActionBar";
+import {
+  bulkApproveReviews,
+  bulkRejectReviews,
+  bulkMarkReviewsAsSpam,
+  bulkResetReviewsToPending,
+} from "@/app/admin/reviews/actions";
 import type { AdminReviewListItem } from "@/lib/reviews/admin";
 
 function ReviewerCell({ review }: { review: AdminReviewListItem }) {
@@ -47,6 +54,7 @@ export function ReviewTable({
   totalCount,
   hasActiveFilters,
   filters,
+  canModerate,
 }: {
   reviews: AdminReviewListItem[];
   page: number;
@@ -55,6 +63,7 @@ export function ReviewTable({
   totalCount: number;
   hasActiveFilters: boolean;
   filters: React.ReactNode;
+  canModerate: boolean;
 }) {
   const columns = useMemo<ColumnDef<AdminReviewListItem, unknown>[]>(
     () => [
@@ -103,6 +112,51 @@ export function ReviewTable({
     []
   );
 
+  const bulkActions = useMemo<BulkAction[]>(() => {
+    if (!canModerate) return [];
+
+    // Always offered regardless of the selection's current statuses —
+    // server-side eligibility (resolveReviewStatusTransition, same as
+    // Phase 4) decides per row what actually applies, reported back via
+    // `skipped` and surfaced by BulkActionBar as a toast. Same shape as
+    // Products' bulk Publish/Archive buttons always being shown
+    // regardless of each selected product's current status.
+    return [
+      {
+        id: "bulk-approve",
+        label: "Approve",
+        run: (ids) => bulkApproveReviews(ids),
+      },
+      {
+        id: "bulk-reject",
+        label: "Reject",
+        variant: "danger",
+        confirm: {
+          title: "Reject these reviews?",
+          description: "They'll no longer be eligible for public display. You can reset them to pending later if needed.",
+          confirmLabel: "Reject",
+        },
+        run: (ids) => bulkRejectReviews(ids),
+      },
+      {
+        id: "bulk-spam",
+        label: "Mark as spam",
+        variant: "danger",
+        confirm: {
+          title: "Mark these reviews as spam?",
+          description: "They'll no longer be eligible for public display. You can reset them to pending later if needed.",
+          confirmLabel: "Mark as spam",
+        },
+        run: (ids) => bulkMarkReviewsAsSpam(ids),
+      },
+      {
+        id: "bulk-reset-to-pending",
+        label: "Reset to pending",
+        run: (ids) => bulkResetReviewsToPending(ids),
+      },
+    ];
+  }, [canModerate]);
+
   return (
     <DataTable
       columns={columns}
@@ -114,6 +168,7 @@ export function ReviewTable({
       totalCount={totalCount}
       searchPlaceholder="Search by reviewer, product, or review text…"
       filters={filters}
+      bulkActions={bulkActions}
       emptyState={
         <EmptyState
           title={hasActiveFilters ? "No matching reviews" : "No reviews yet"}

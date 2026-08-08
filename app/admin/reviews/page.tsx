@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requirePageAccess } from "@/lib/admin/auth";
+import { can } from "@/lib/admin/permissions";
 import { getAdminReviews } from "@/lib/reviews/admin";
 import { REVIEW_STATUSES } from "@/lib/reviews/status";
 import { Breadcrumbs } from "@/components/admin/layout/Breadcrumbs";
@@ -17,7 +18,7 @@ export default async function AdminReviewsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requirePageAccess("reviews:view");
+  const user = await requirePageAccess("reviews:view");
 
   const params = await searchParams;
   const status = REVIEW_STATUSES.includes(params.status as ReviewStatus)
@@ -60,6 +61,7 @@ export default async function AdminReviewsPage({
         totalCount={total}
         hasActiveFilters={hasActiveFilters}
         filters={<ReviewFilters />}
+        canModerate={can(user.role, "reviews:moderate")}
       />
     </div>
   );

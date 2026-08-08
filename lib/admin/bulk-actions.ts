@@ -10,6 +10,17 @@ export type BulkMutationOutcome = {
   /** Ids that were selected but ineligible, with a human-readable reason
    *  the UI can show directly (e.g. "Missing category"). */
   skipped?: { id: string; reason: string }[];
+  /** Optional per-entity metadata to merge into that entity's own audit
+   *  entry, alongside the batch-wide {batchId, batchSize} every entry
+   *  already gets. Existing callers (Products, Orders) don't need this —
+   *  their bulk actions all converge on identical per-row data, so the
+   *  action string alone (e.g. "order.bulk_status_completed") already
+   *  says everything the audit trail needs. Reviews' bulk actions are the
+   *  first caller that needs it: a single bulk "Reject" can legally pull
+   *  eligible rows from either PENDING or APPROVED (see the approved
+   *  transition table), so unlike the single-dimension Orders/Products
+   *  cases, `from` genuinely varies row-to-row within one action. */
+  metadataById?: Record<string, Record<string, unknown>>;
 };
 
 export type BulkActionSummary = {
@@ -56,7 +67,7 @@ export async function withAuditedBulkMutation(
     throw error;
   }
 
-  const { affectedIds, skipped = [] } = await handler(user);
+  const { affectedIds, skipped = [], metadataById = {} } = await handler(user);
 
   if (affectedIds.length > 0) {
     const batchId = crypto.randomUUID();
@@ -67,7 +78,7 @@ export async function withAuditedBulkMutation(
         action: audit.action,
         entityType: audit.entityType,
         entityId: id,
-        metadata: { batchId, batchSize: affectedIds.length },
+        metadata: { ...metadataById[id], batchId, batchSize: affectedIds.length },
       })),
     });
   }
