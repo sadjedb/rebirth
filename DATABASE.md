@@ -31,6 +31,17 @@ createdAt)` index — Customer Detail's recent-orders query filters by
 `userId` and sorts by `createdAt`, which a composite index serves
 directly instead of an indexed filter followed by an in-memory sort. See
 `prisma/migrations/20260601000000_order_userid_createdat_index/migration.sql`.
+A follow-up review confirmed this against every `Order` query in the
+codebase that filters by `userId` (four total): it also directly speeds
+up `getOrdersByUserId` in `lib/orders/storefront.ts` (the storefront
+account page's own order history — same filter-by-userId,
+sort-by-createdAt shape, and unbounded, no `take` limit), and the other
+two (the Customer List `groupBy` and Customer Detail's stats `aggregate`,
+both plain userId equality/IN filters with no sort) are served exactly
+as well as the old standalone index served them. No query anywhere sorts
+a userId-filtered result by anything other than `createdAt`, so there's
+no regression case — the composite index fully subsumes the one it
+replaced for every current query, not just the one that motivated it.
 
 ## Important: what's been verified vs. what hasn't
 
