@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requirePageAccess } from "@/lib/admin/auth";
+import { can } from "@/lib/admin/permissions";
 import { getReviewDetail } from "@/lib/reviews/detail";
 import { Breadcrumbs } from "@/components/admin/layout/Breadcrumbs";
 import { ReviewContentCard } from "@/app/admin/reviews/components/cards/ReviewContentCard";
 import { ReviewerCard } from "@/app/admin/reviews/components/cards/ReviewerCard";
 import { PurchaseCard } from "@/app/admin/reviews/components/cards/PurchaseCard";
+import { ModerationCard } from "@/app/admin/reviews/components/cards/ModerationCard";
 import { brand } from "@/config/brand";
 
 export const metadata: Metadata = {
@@ -17,7 +19,7 @@ export default async function ReviewDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePageAccess("reviews:view");
+  const user = await requirePageAccess("reviews:view");
 
   const { id } = await params;
   const review = await getReviewDetail(id);
@@ -43,9 +45,8 @@ export default async function ReviewDetailPage({
         <p className="text-sm text-admin-muted mt-1">Reviewed by {reviewerName}</p>
       </div>
 
-      {/* Read-only in Phase 3 — moderation actions (approve/reject/spam)
-          are Phase 4 and intentionally not present on this card yet. */}
       <div className="space-y-6 max-w-2xl">
+        <ModerationCard review={review} canModerate={can(user.role, "reviews:moderate")} />
         <ReviewContentCard review={review} />
         <ReviewerCard review={review} />
         <PurchaseCard review={review} />

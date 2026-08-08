@@ -1,15 +1,13 @@
 import { FormCard } from "@/components/admin/ui/FormCard";
 import { DetailField } from "@/components/admin/ui/DetailField";
-import { ReviewStatusBadge } from "@/app/admin/reviews/components/ReviewStatusBadge";
 import { formatOrderTimestamp } from "@/lib/orders/format";
 import type { ReviewDetail } from "@/lib/reviews/detail";
 
+/** Status now lives on ModerationCard (Phase 4), alongside the actions
+ *  that change it — not duplicated here. */
 export function ReviewContentCard({ review }: { review: ReviewDetail }) {
   return (
     <FormCard title="Review">
-      <DetailField label="Status">
-        <ReviewStatusBadge status={review.status} />
-      </DetailField>
       <DetailField label="Rating">{review.rating} / 5</DetailField>
       <DetailField label="Review text">
         <p className="whitespace-pre-wrap">{review.body}</p>
