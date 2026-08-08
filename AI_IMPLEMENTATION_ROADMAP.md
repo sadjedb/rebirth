@@ -97,13 +97,17 @@ All formatting and transition logic are centralized.
 
 ---
 
-# 🚧 Module 3 — Customers (Next Module)
+# 🚧 Module 3 — Customers (In Progress)
 
 Current status:
 
-Architecture approved.
+Phases 1–3 completed (Architecture, Customer List, Customer Detail),
+including a follow-up query-efficiency/index review. See below.
 
-Implementation has NOT started.
+Deferred features (Internal Notes, Customer Timeline, Groups, Segments,
+Marketing Tags, Guest/Registered unification) remain unscheduled — see
+"Future (Not Part of Initial Module)" below. There is no Phase 4 for
+Customers; the module moves to Module 4 — Reviews next.
 
 ---
 
@@ -156,6 +160,17 @@ Architecture Review
 
 Customer List
 
+✅ Completed
+
+Implemented:
+
+- `lib/customers/admin.ts`
+- `app/admin/customers/page.tsx`
+- `app/admin/customers/loading.tsx`
+- `app/admin/customers/error.tsx`
+- `app/admin/customers/components/CustomerTable.tsx`
+- `customers:view` permission
+
 Build:
 
 - customers:view permission
@@ -194,6 +209,17 @@ Not required:
 
 Customer Detail
 
+✅ Completed
+
+Implemented:
+
+- `lib/customers/detail.ts`
+- `app/admin/customers/[id]/page.tsx`
+- `app/admin/customers/[id]/loading.tsx`
+- `app/admin/customers/[id]/error.tsx`
+- `app/admin/customers/components/cards/StatisticsCard.tsx`
+- `app/admin/customers/components/cards/RecentOrdersCard.tsx`
+
 Build:
 
 - Profile Card
@@ -209,11 +235,54 @@ Reuse directly:
 
 Never recreate them.
 
+Statistics rule (do not silently change):
+
+- Purchasing statistics — order count, total/average spend, first/last
+  order date — **exclude** `CANCELLED` orders. They represent actual
+  purchasing activity.
+- The embedded Recent Orders activity table **includes** `CANCELLED`
+  orders — it represents customer activity/history, not only successful
+  purchases.
+
+### Phase 3 follow-up — query-efficiency / index review
+
+✅ Completed (commits `116757d`, `c830ef1` — 2 commits ahead of
+`origin/main`, not yet pushed)
+
+`Order`'s standalone `userId` index was replaced with a composite
+`(userId, createdAt)` index. Customer Detail's recent-orders query
+filters by `userId` and sorts by `createdAt`, which the composite index
+serves directly instead of an indexed filter followed by an in-memory
+sort. Migration:
+`prisma/migrations/20260601000000_order_userid_createdat_index/migration.sql`.
+
+Verified against every `Order` query in the codebase that filters by
+`userId` (four total) — the composite index fully subsumes the
+standalone index it replaced for all of them, with no regression case:
+
+- `lib/customers/detail.ts` recent-orders query (the query that
+  motivated the change) — filter `userId`, sort `createdAt` desc.
+- `lib/orders/storefront.ts`'s `getOrdersByUserId` (storefront account
+  order history) — same filter/sort shape, unbounded (no `take`) — a
+  second real beneficiary, not just Customer Detail.
+- `lib/customers/admin.ts`'s `groupBy` (Phase 2 Customer List
+  aggregate) — `userId IN(...)` + status filter, no sort — served
+  equally well by the composite index's leading column.
+- `lib/customers/detail.ts`'s stats `aggregate` — `userId` + status
+  filter, no sort — same as above.
+
+**Not yet verified against a live Postgres instance** — proofread only,
+same caveat as the Module 2 migration (see `DATABASE.md`). Run
+`npm run db:migrate` against a real database before treating it as
+fully verified.
+
 ---
 
 ## Future (Not Part of Initial Module)
 
-Potential additions
+Potential additions — unscheduled, not an approved phase. Do not treat
+any of these as an implicit "Phase 4" for Customers; they require an
+explicit decision to schedule before implementation.
 
 - Internal Notes
 - Customer Timeline
@@ -632,6 +701,12 @@ Before writing code:
 
 **Next implementation target:**
 
-> **Module 3 — Customers**
+> **Module 4 — Reviews**
 >
-> Begin with **Phase 2 — Customer List** using the approved architecture above.
+> Module 3 — Customers is done through Phase 3, plus the query-efficiency
+> index review above. Deferred Customer features remain unscheduled (see
+> "Future (Not Part of Initial Module)" above) — do not implement them
+> as an unofficial Phase 4.
+>
+> Begin with **Phase 1 — Architecture** for Reviews (see Module 4 section
+> below) before any implementation.
