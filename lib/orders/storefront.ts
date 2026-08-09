@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/audit";
+import { redeemCouponInTransaction, CouponRedemptionError } from "@/lib/coupons/redemption";
 import type { CartItem } from "@/lib/cart-context";
 import type {
   Order as PrismaOrder,
@@ -10,7 +11,10 @@ import type {
   OrderStatus,
   PaymentStatus,
   FulfillmentStatus,
+  Prisma,
 } from "@prisma/client";
+
+export { CouponRedemptionError };
 
 export const checkoutSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required"),
@@ -28,6 +32,12 @@ export const checkoutSchema = z.object({
   postalCode: z.string().trim().min(1, "Postal code is required"),
   country: z.string().trim().min(1, "Country is required"),
   notes: z.string().trim().optional(),
+  /** Applied server-side inside createOrder's transaction — see
+   *  lib/coupons/redemption.ts. Never trust a discount amount computed
+   *  earlier in the request (e.g. from a checkout "apply" preview); only
+   *  the code travels from the client, the amount is always recomputed
+   *  fresh at order-creation time. */
+  couponCode: z.string().trim().optional(),
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -38,6 +48,9 @@ export type Order = {
   userId?: string | null;
   items: CartItem[];
   subtotal: number;
+  /** Populated by lib/coupons/redemption.ts when a coupon was applied at
+   *  checkout; 0 otherwise. Never negative, never exceeds subtotal. */
+  discountTotal: number;
   total: number;
   /** Order's own currency (Phase 2) — always format money against this,
    *  never the store default (brand.currency), the same rule the admin
@@ -79,6 +92,7 @@ function toOrder(row: OrderRow): Order {
     orderNumber: row.orderNumber,
     userId: row.userId,
     subtotal: row.subtotal,
+    discountTotal: row.discountTotal,
     total: row.total,
     currency: row.currency,
     customer: {
@@ -142,55 +156,74 @@ export async function createOrder(
       : []
   );
 
-  const row = await prisma.order.create({
-    data: {
-      userId,
-      placedBy: "CUSTOMER",
-      currency: "USD",
-      subtotal,
-      // No order-level or line-level discounts, tax, or shipping cost
-      // exist in the current checkout flow — total is exactly subtotal
-      // until those are collected. Persisted now (not derived on read)
-      // so it stays correct even once that formula gains more inputs.
-      total: subtotal,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      phone: input.phone,
-      notes: input.notes,
-      addresses: {
-        create: [
-          {
-            type: "SHIPPING",
-            firstName: input.firstName,
-            lastName: input.lastName,
-            phone: input.phone,
-            addressLine1: input.addressLine1,
-            addressLine2: input.addressLine2,
-            city: input.city,
-            region: input.region,
-            postalCode: input.postalCode,
-            country: input.country,
-          },
-        ],
+  const row = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Resolved inside the same transaction as the redemption guard below,
+    // even though it doesn't itself need atomicity — keeping the whole
+    // "figure out totals, then write the order" sequence in one
+    // transaction means a coupon race-loss (thrown by
+    // redeemCouponInTransaction) cleanly rolls back everything, not just
+    // the coupon row.
+    let discountTotal = 0;
+    let couponId: string | null = null;
+    if (input.couponCode) {
+      const redemption = await redeemCouponInTransaction(tx, input.couponCode, subtotal);
+      discountTotal = redemption.discountAmount;
+      couponId = redemption.couponId;
+    }
+
+    // subtotal - discountTotal + taxTotal + shippingTotal — taxTotal/
+    // shippingTotal still don't exist in this checkout flow (both stay
+    // their schema default of 0), same as before coupons existed.
+    const total = subtotal - discountTotal;
+
+    return tx.order.create({
+      data: {
+        userId,
+        placedBy: "CUSTOMER",
+        currency: "USD",
+        subtotal,
+        discountTotal,
+        couponId,
+        total,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email,
+        phone: input.phone,
+        notes: input.notes,
+        addresses: {
+          create: [
+            {
+              type: "SHIPPING",
+              firstName: input.firstName,
+              lastName: input.lastName,
+              phone: input.phone,
+              addressLine1: input.addressLine1,
+              addressLine2: input.addressLine2,
+              city: input.city,
+              region: input.region,
+              postalCode: input.postalCode,
+              country: input.country,
+            },
+          ],
+        },
+        items: {
+          create: items.map((item) => ({
+            productId: item.productId,
+            slug: item.slug,
+            name: item.name,
+            code: item.code,
+            sku: skuByProductId.get(item.productId) ?? null,
+            price: item.price,
+            lineTotal: item.price * item.quantity,
+            tone: item.tone,
+            icon: item.icon,
+            size: item.size,
+            quantity: item.quantity,
+          })),
+        },
       },
-      items: {
-        create: items.map((item) => ({
-          productId: item.productId,
-          slug: item.slug,
-          name: item.name,
-          code: item.code,
-          sku: skuByProductId.get(item.productId) ?? null,
-          price: item.price,
-          lineTotal: item.price * item.quantity,
-          tone: item.tone,
-          icon: item.icon,
-          size: item.size,
-          quantity: item.quantity,
-        })),
-      },
-    },
-    include: { items: true, addresses: true },
+      include: { items: true, addresses: true },
+    });
   });
 
   // Not withAuditedMutation — this isn't an admin action gated by a

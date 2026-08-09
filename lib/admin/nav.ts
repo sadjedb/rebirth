@@ -44,8 +44,10 @@ export const ADMIN_NAV: NavItem[] = [
     href: "/admin/marketing",
     implemented: false,
     children: [
-      { label: "Coupons", href: "/admin/marketing/coupons", implemented: false },
-      { label: "Discounts", href: "/admin/marketing/discounts", implemented: false },
+      // Module 5: one unified system, not two — "Discounts" was a stale
+      // separate placeholder for the same concept Coupon already covers
+      // (see the Module 5 architecture notes). Collapsed into this entry.
+      { label: "Coupons", href: "/admin/coupons", implemented: true },
       { label: "Email Campaigns", href: "/admin/marketing/campaigns", implemented: false },
       { label: "Featured Products", href: "/admin/marketing/featured", implemented: false },
     ],

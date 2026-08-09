@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 import { submitOrder } from "@/app/(storefront)/checkout/actions";
+import { CouponCodeInput } from "@/components/checkout/CouponCodeInput";
 
 const countries = [
   "United States",
@@ -48,6 +49,9 @@ export function CheckoutForm() {
   const [values, setValues] = useState<Record<string, string>>({ country: "" });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountAmount: number } | null>(
+    null
+  );
   const [isPending, startTransition] = useTransition();
 
   function handleChange(name: string, value: string) {
@@ -60,7 +64,15 @@ export function CheckoutForm() {
     setFormError(null);
 
     startTransition(async () => {
-      const result = await submitOrder(values, items);
+      // Only sent if the customer explicitly applied it above — never
+      // silently attached from an unapplied, half-typed code. The amount
+      // shown in the sidebar below is a preview only; createOrder
+      // recomputes and atomically redeems for real, see
+      // lib/coupons/redemption.ts.
+      const result = await submitOrder(
+        { ...values, couponCode: appliedCoupon?.code ?? "" },
+        items
+      );
       if (result.success) {
         clearCart();
         router.push(`/order-confirmation/${result.orderId}`);
@@ -153,10 +165,37 @@ export function CheckoutForm() {
       )}
 
       <div className="sm:col-span-2 border-t border-stone/20 pt-6 mt-2">
-        <div className="flex items-center justify-between text-base mb-6">
-          <span className="text-sumi">Total (cash on delivery)</span>
-          <span className="font-mono text-sumi">${subtotal}</span>
-        </div>
+        <CouponCodeInput
+          subtotal={subtotal}
+          applied={appliedCoupon}
+          onApplied={(code, discountAmount) => setAppliedCoupon({ code, discountAmount })}
+          onRemoved={() => setAppliedCoupon(null)}
+        />
+
+        {appliedCoupon ? (
+          <div className="space-y-1.5 mb-4">
+            <div className="flex items-center justify-between text-sm text-stone">
+              <span>Subtotal</span>
+              <span className="font-mono">${subtotal}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm text-stone">
+              <span>Discount</span>
+              <span className="font-mono">-${appliedCoupon.discountAmount}</span>
+            </div>
+            <div className="flex items-center justify-between text-base pt-1">
+              <span className="text-sumi">Total (cash on delivery)</span>
+              <span className="font-mono text-sumi">
+                ${subtotal - appliedCoupon.discountAmount}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between text-base mb-6">
+            <span className="text-sumi">Total (cash on delivery)</span>
+            <span className="font-mono text-sumi">${subtotal}</span>
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={isPending || items.length === 0}

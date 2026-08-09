@@ -1,12 +1,33 @@
 "use server";
 
-import { checkoutSchema, createOrder } from "@/lib/orders/storefront";
+import { checkoutSchema, createOrder, CouponRedemptionError } from "@/lib/orders/storefront";
+import { validateCoupon } from "@/lib/coupons/redemption";
 import { getSession } from "@/lib/session";
 import type { CartItem } from "@/lib/cart-context";
 
 export type SubmitOrderResult =
   | { success: true; orderId: string }
   | { success: false; fieldErrors: Partial<Record<string, string>>; formError?: string };
+
+export type ApplyCouponResult =
+  | { valid: true; discountAmount: number }
+  | { valid: false; error: string };
+
+/**
+ * Preview only — read-only (lib/coupons/redemption.ts's validateCoupon),
+ * no usageCount increment. Lets the checkout UI show the discount before
+ * the order is actually placed. The amount shown here is NOT trusted at
+ * submission time: submitOrder passes the raw code through to createOrder,
+ * which recomputes and atomically redeems inside its own transaction —
+ * this preview could be stale by the time the real order writes (someone
+ * else exhausts the usage limit in between), and createOrder's own check
+ * is what actually matters.
+ */
+export async function applyCoupon(code: string, subtotal: number): Promise<ApplyCouponResult> {
+  const result = await validateCoupon(code, subtotal);
+  if (!result.valid) return { valid: false, error: result.error };
+  return { valid: true, discountAmount: result.discountAmount };
+}
 
 export async function submitOrder(
   rawInput: Record<string, string>,
@@ -44,6 +65,13 @@ export async function submitOrder(
   }
 
   const session = await getSession();
-  const order = await createOrder(parsed.data, items, session?.id);
-  return { success: true, orderId: order.id };
+  try {
+    const order = await createOrder(parsed.data, items, session?.id);
+    return { success: true, orderId: order.id };
+  } catch (error) {
+    if (error instanceof CouponRedemptionError) {
+      return { success: false, fieldErrors: {}, formError: error.message };
+    }
+    throw error;
+  }
 }

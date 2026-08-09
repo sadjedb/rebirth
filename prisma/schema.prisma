@@ -105,6 +105,25 @@ enum ReviewStatus {
   SPAM
 }
 
+enum CouponDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+/// Editorial lifecycle only — independent of temporal validity
+/// (startsAt/endsAt on Coupon below). An ACTIVE coupon past its endsAt
+/// is still status ACTIVE in the database; it just fails the temporal
+/// check at redemption time. See lib/coupons/status.ts's
+/// getCouponEffectiveState for the derived (not persisted) display
+/// state that combines both. Fully bidirectional transitions, mirroring
+/// ProductStatus exactly — editorial state, mistake-correction routine,
+/// not a physical/irreversible process like OrderStatus.
+enum CouponStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
 /// Deliberately flat for now — no parentId/hierarchy. Extend later if needed.
 model Category {
   id           String    @id @default(cuid())
@@ -300,6 +319,9 @@ model Order {
   /// Sum of OrderItem.lineTotal, pre order-level discount.
   subtotal Int
   /// Order-level discount (e.g. a coupon applied to the whole order).
+  /// Populated by lib/coupons/redemption.ts when couponId is set; 0
+  /// otherwise. Never touches OrderItem.discount, which is a separate,
+  /// currently-unused per-line mechanism — out of Module 5's scope.
   discountTotal Int @default(0)
   taxTotal      Int @default(0)
   shippingTotal Int @default(0)
@@ -308,6 +330,15 @@ model Order {
   /// to the total formula must not silently rewrite what a past customer
   /// was actually charged.
   total Int
+
+  /// Nullable + SetNull (not Restrict): a coupon is a supporting
+  /// reference on an order, not the order's subject — unlike
+  /// Review.productId, which is required precisely because a review's
+  /// entire subject IS the product. Historical orders stay fully
+  /// readable after a coupon is archived (or, in principle, deleted)
+  /// since discountTotal/total are snapshotted, never recomputed.
+  couponId String?
+  coupon   Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
 
   paymentMethod     PaymentMethod     @default(CASH_ON_DELIVERY)
   paymentStatus     PaymentStatus     @default(PENDING)
@@ -349,6 +380,9 @@ model Order {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([email])
+  /// Serves Coupon usage tracking (Module 5 Phase 4): "which orders used
+  /// this coupon", filtered by couponId, most-recent-first.
+  @@index([couponId, createdAt])
 }
 
 /// Billing and/or shipping address for an order. A separate child model
@@ -469,6 +503,62 @@ model Review {
   /// this project indexes FK columns explicitly rather than relying on
   /// an implicit one.
   @@index([orderItemId])
+}
+
+/// Module 5 (Coupons & Discounts). One unified system — a coupon IS the
+/// discount mechanism (always code-based), not a separate concept from
+/// "discounts". See the Module 5 architecture notes for why there is no
+/// separate CouponRedemption model (Order.couponId + Order's existing
+/// userId/email/createdAt already answer every "usage tracking"
+/// question) and no deletedAt/delete capability (ARCHIVED status already
+/// is the retired state — ARCHIVING a coupon is an edit, not a delete).
+model Coupon {
+  id String @id @default(cuid())
+
+  /// Always normalized uppercase + trimmed before write and before every
+  /// redemption lookup.
+  code String @unique
+
+  /// Staff-facing only, never shown to the customer.
+  description String?
+
+  discountType CouponDiscountType
+  /// Whole-dollar integer, same convention as Product.price/Order.total
+  /// (see lib/money.ts — this project has not adopted cents precision).
+  /// Meaning depends on discountType: 1-100 for PERCENTAGE, >0 for
+  /// FIXED_AMOUNT. Enforced by Zod AND the conditional CHECK constraint
+  /// below (hand-appended in the migration, same approach as Review's
+  /// rating range — Prisma's schema DSL has no native per-type
+  /// conditional constraint).
+  discountValue Int
+
+  /// Whole-dollar. Null = no minimum. Checked against the pre-discount
+  /// subtotal at redemption time.
+  minOrderValue Int?
+
+  /// Null = unlimited total redemptions across all customers. No
+  /// per-customer limit — out of the approved Module 5 scope.
+  usageLimit Int?
+  /// Server-only — never client-writable. Incremented atomically inside
+  /// the same transaction as the Order that redeemed it (see
+  /// lib/coupons/redemption.ts) so it can never drift from the true
+  /// count of Orders referencing this coupon.
+  usageCount Int @default(0)
+
+  /// Both null = valid immediately, never expires. Independent of
+  /// `status` — see the enum's own doc comment above.
+  startsAt DateTime?
+  endsAt   DateTime?
+
+  status CouponStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model ContactMessage {

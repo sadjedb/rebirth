@@ -25,7 +25,10 @@ export type Capability =
   | "orders:cancel"
   | "customers:view"
   | "reviews:view"
-  | "reviews:moderate";
+  | "reviews:moderate"
+  | "coupons:view"
+  | "coupons:create"
+  | "coupons:edit";
 
 /**
  * Role → capability lookup. This is the ONLY place role/capability logic
@@ -43,6 +46,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "orders:view",
     "customers:view",
     "reviews:view",
+    "coupons:view",
   ],
   MANAGER: [
     "admin:access",
@@ -55,6 +59,9 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "customers:view",
     "reviews:view",
     "reviews:moderate",
+    "coupons:view",
+    "coupons:create",
+    "coupons:edit",
   ],
   ADMIN: [
     "admin:access",
@@ -71,6 +78,9 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "customers:view",
     "reviews:view",
     "reviews:moderate",
+    "coupons:view",
+    "coupons:create",
+    "coupons:edit",
   ],
   SUPER_ADMIN: [
     "admin:access",
@@ -89,6 +99,9 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "customers:view",
     "reviews:view",
     "reviews:moderate",
+    "coupons:view",
+    "coupons:create",
+    "coupons:edit",
   ],
 };
 
