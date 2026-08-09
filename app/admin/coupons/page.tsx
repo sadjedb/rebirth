@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requirePageAccess } from "@/lib/admin/auth";
+import { can } from "@/lib/admin/permissions";
 import { getAdminCoupons } from "@/lib/coupons/admin";
 import { COUPON_STATUSES } from "@/lib/coupons/status";
 import { Breadcrumbs } from "@/components/admin/layout/Breadcrumbs";
@@ -17,7 +19,7 @@ export default async function AdminCouponsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requirePageAccess("coupons:view");
+  const user = await requirePageAccess("coupons:view");
 
   const params = await searchParams;
   const status = COUPON_STATUSES.includes(params.status as CouponStatus)
@@ -33,6 +35,8 @@ export default async function AdminCouponsPage({
   });
 
   const hasActiveFilters = Boolean(params.search || params.status);
+  const canCreate = can(user.role, "coupons:create");
+  const canEdit = can(user.role, "coupons:edit");
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -50,7 +54,17 @@ export default async function AdminCouponsPage({
             {total} coupon{total === 1 ? "" : "s"}
           </p>
         </div>
-        {/* No "New coupon" link yet — Create/Edit is Phase 3. */}
+        {/* Server-gated: direct URL access to /admin/coupons/new is also
+            protected by requirePageAccess("coupons:create") on that page
+            itself — this hides the control, not the only protection. */}
+        {canCreate && (
+          <Link
+            href="/admin/coupons/new"
+            className="px-4 py-2 text-sm rounded-md bg-admin-accent text-admin-accent-fg hover:opacity-90 transition-opacity"
+          >
+            New coupon
+          </Link>
+        )}
       </div>
 
       <CouponTable
@@ -61,6 +75,7 @@ export default async function AdminCouponsPage({
         totalCount={total}
         hasActiveFilters={hasActiveFilters}
         filters={<CouponFilters />}
+        canEdit={canEdit}
       />
     </div>
   );

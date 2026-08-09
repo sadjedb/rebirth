@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/admin/ui/DataTable";
 import { DataTableColumnHeader } from "@/components/admin/ui/DataTableColumnHeader";
@@ -26,6 +27,20 @@ function UsageCell({ coupon }: { coupon: AdminCouponListItem }) {
   );
 }
 
+function CodeCell({ coupon, canEdit }: { coupon: AdminCouponListItem; canEdit: boolean }) {
+  if (!canEdit) {
+    return <span className="font-mono text-admin-fg">{coupon.code}</span>;
+  }
+  return (
+    <Link
+      href={`/admin/coupons/${coupon.id}`}
+      className="font-mono text-admin-fg hover:text-admin-accent transition-colors"
+    >
+      {coupon.code}
+    </Link>
+  );
+}
+
 export function CouponTable({
   coupons,
   page,
@@ -34,6 +49,7 @@ export function CouponTable({
   totalCount,
   hasActiveFilters,
   filters,
+  canEdit,
 }: {
   coupons: AdminCouponListItem[];
   page: number;
@@ -42,13 +58,17 @@ export function CouponTable({
   totalCount: number;
   hasActiveFilters: boolean;
   filters: React.ReactNode;
+  /** Direct URL access to /admin/coupons/[id] is also protected
+   *  server-side (requirePageAccess("coupons:edit") on that page) — this
+   *  just hides the affordance for users who can't use it. */
+  canEdit: boolean;
 }) {
   const columns = useMemo<ColumnDef<AdminCouponListItem, unknown>[]>(
     () => [
       {
         id: "code",
         header: () => <DataTableColumnHeader label="Code" sortKey="code" />,
-        cell: ({ row }) => <span className="font-mono text-admin-fg">{row.original.code}</span>,
+        cell: ({ row }) => <CodeCell coupon={row.original} canEdit={canEdit} />,
       },
       {
         id: "discountValue",
@@ -80,7 +100,7 @@ export function CouponTable({
           }),
       },
     ],
-    []
+    [canEdit]
   );
 
   return (
