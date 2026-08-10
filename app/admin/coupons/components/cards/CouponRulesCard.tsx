@@ -10,10 +10,12 @@ export function CouponRulesCard({
   state,
   dispatch,
   errors,
+  disabled = false,
 }: {
   state: CouponFormState;
   dispatch: Dispatch<CouponFormAction>;
   errors: Partial<Record<string, string>>;
+  disabled?: boolean;
 }) {
   return (
     <FormCard title="Rules">
@@ -30,8 +32,9 @@ export function CouponRulesCard({
             min={0}
             step={1}
             value={state.minOrderValue}
+            disabled={disabled}
             onChange={(e) => dispatch({ type: "SET", field: "minOrderValue", value: e.target.value })}
-            className={inputClass(Boolean(errors.minOrderValue))}
+            className={`${inputClass(Boolean(errors.minOrderValue))} disabled:opacity-60 disabled:cursor-not-allowed`}
           />
         </Field>
 
@@ -47,8 +50,9 @@ export function CouponRulesCard({
             min={1}
             step={1}
             value={state.usageLimit}
+            disabled={disabled}
             onChange={(e) => dispatch({ type: "SET", field: "usageLimit", value: e.target.value })}
-            className={inputClass(Boolean(errors.usageLimit))}
+            className={`${inputClass(Boolean(errors.usageLimit))} disabled:opacity-60 disabled:cursor-not-allowed`}
           />
         </Field>
       </div>
@@ -59,8 +63,9 @@ export function CouponRulesCard({
             id="startsAt"
             type="datetime-local"
             value={state.startsAt}
+            disabled={disabled}
             onChange={(e) => dispatch({ type: "SET", field: "startsAt", value: e.target.value })}
-            className={inputClass(Boolean(errors.startsAt))}
+            className={`${inputClass(Boolean(errors.startsAt))} disabled:opacity-60 disabled:cursor-not-allowed`}
           />
         </Field>
 
@@ -69,8 +74,9 @@ export function CouponRulesCard({
             id="endsAt"
             type="datetime-local"
             value={state.endsAt}
+            disabled={disabled}
             onChange={(e) => dispatch({ type: "SET", field: "endsAt", value: e.target.value })}
-            className={inputClass(Boolean(errors.endsAt))}
+            className={`${inputClass(Boolean(errors.endsAt))} disabled:opacity-60 disabled:cursor-not-allowed`}
           />
         </Field>
       </div>

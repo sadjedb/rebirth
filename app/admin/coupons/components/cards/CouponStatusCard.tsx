@@ -13,6 +13,7 @@ export function CouponStatusCard({
   dispatch,
   currentStatus = null,
   usageInfo = null,
+  disabled = false,
 }: {
   state: CouponFormState;
   dispatch: Dispatch<CouponFormAction>;
@@ -23,22 +24,25 @@ export function CouponStatusCard({
   /** Read-only — usageCount is never an editable field. Null in create
    *  mode (a coupon that doesn't exist yet has no usage history). */
   usageInfo?: { usageCount: number; usageLimit: number | null; createdAt: Date; updatedAt: Date } | null;
+  disabled?: boolean;
 }) {
   const selectableStatuses = getAllowedCouponStatusTransitions(currentStatus);
 
   return (
     <FormCard title="Status">
-      <fieldset className="space-y-2">
+      <fieldset className="space-y-2" disabled={disabled}>
         <legend className="sr-only">Status</legend>
         {selectableStatuses.map((status) => {
           const meta = COUPON_STATUS_META[status];
           return (
             <label
               key={status}
-              className={`flex items-start gap-2.5 p-2.5 rounded-md border cursor-pointer transition-colors ${
+              className={`flex items-start gap-2.5 p-2.5 rounded-md border transition-colors ${
+                disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-admin-surface-hover"
+              } ${
                 state.status === status
                   ? "border-admin-accent bg-admin-accent/5"
-                  : "border-admin-border hover:bg-admin-surface-hover"
+                  : "border-admin-border"
               }`}
             >
               <input

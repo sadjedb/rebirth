@@ -15,10 +15,19 @@ import type { CouponStatus } from "@prisma/client";
 
 type CouponFormProps = {
   usageInfo?: { usageCount: number; usageLimit: number | null; createdAt: Date; updatedAt: Date };
+  /** False for a coupons:view-only user reaching the edit page (Coupon
+   *  Detail is coupons:view-gated as a whole, since it also carries
+   *  read-only usage/redemption data Staff should be able to see — the
+   *  actual mutation is still independently enforced server-side by
+   *  updateCoupon's own checkPermission("coupons:edit"); this only
+   *  controls whether the form is interactive. Always true in create
+   *  mode — /admin/coupons/new is itself coupons:create-gated. */
+  canEdit?: boolean;
 } & ({ mode: "create" } | { mode: "edit"; couponId: string; initialFormState: CouponFormState });
 
 export function CouponForm(props: CouponFormProps) {
   const { mode, usageInfo } = props;
+  const canEdit = props.canEdit ?? true;
   const router = useRouter();
   const toast = useToast();
 
@@ -53,6 +62,7 @@ export function CouponForm(props: CouponFormProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!canEdit) return;
     setErrors({});
     setFormError(null);
     setConflict(false);
@@ -92,8 +102,8 @@ export function CouponForm(props: CouponFormProps) {
     <form onSubmit={handleSubmit} noValidate>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <CouponDetailsCard state={state} dispatch={dispatch} errors={errors} />
-          <CouponRulesCard state={state} dispatch={dispatch} errors={errors} />
+          <CouponDetailsCard state={state} dispatch={dispatch} errors={errors} disabled={!canEdit} />
+          <CouponRulesCard state={state} dispatch={dispatch} errors={errors} disabled={!canEdit} />
         </div>
 
         <div className="space-y-6">
@@ -102,6 +112,7 @@ export function CouponForm(props: CouponFormProps) {
             dispatch={dispatch}
             currentStatus={currentStatus}
             usageInfo={usageInfo}
+            disabled={!canEdit}
           />
         </div>
       </div>
@@ -129,15 +140,17 @@ export function CouponForm(props: CouponFormProps) {
             onClick={handleCancel}
             className="px-4 py-2 text-sm rounded-md border border-admin-border text-admin-fg hover:bg-admin-surface-hover transition-colors"
           >
-            Cancel
+            {canEdit ? "Cancel" : "Back"}
           </button>
-          <button
-            type="submit"
-            disabled={isPending}
-            className="px-4 py-2 text-sm rounded-md bg-admin-accent text-admin-accent-fg hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {isPending ? "Saving…" : mode === "edit" ? "Save" : "Create coupon"}
-          </button>
+          {canEdit && (
+            <button
+              type="submit"
+              disabled={isPending}
+              className="px-4 py-2 text-sm rounded-md bg-admin-accent text-admin-accent-fg hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {isPending ? "Saving…" : mode === "edit" ? "Save" : "Create coupon"}
+            </button>
+          )}
         </div>
       </div>
 

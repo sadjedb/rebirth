@@ -27,10 +27,12 @@ function UsageCell({ coupon }: { coupon: AdminCouponListItem }) {
   );
 }
 
-function CodeCell({ coupon, canEdit }: { coupon: AdminCouponListItem; canEdit: boolean }) {
-  if (!canEdit) {
-    return <span className="font-mono text-admin-fg">{coupon.code}</span>;
-  }
+function CodeCell({ coupon }: { coupon: AdminCouponListItem }) {
+  // Always links — the destination page (/admin/coupons/[id]) is itself
+  // gated at coupons:view (same as this list), not coupons:edit, since
+  // Phase 4 added read-only usage/redemption data there too. Whether the
+  // form on that page is interactive is decided on that page itself via
+  // its own canEdit check, not by hiding this link.
   return (
     <Link
       href={`/admin/coupons/${coupon.id}`}
@@ -49,7 +51,6 @@ export function CouponTable({
   totalCount,
   hasActiveFilters,
   filters,
-  canEdit,
 }: {
   coupons: AdminCouponListItem[];
   page: number;
@@ -58,17 +59,13 @@ export function CouponTable({
   totalCount: number;
   hasActiveFilters: boolean;
   filters: React.ReactNode;
-  /** Direct URL access to /admin/coupons/[id] is also protected
-   *  server-side (requirePageAccess("coupons:edit") on that page) — this
-   *  just hides the affordance for users who can't use it. */
-  canEdit: boolean;
 }) {
   const columns = useMemo<ColumnDef<AdminCouponListItem, unknown>[]>(
     () => [
       {
         id: "code",
         header: () => <DataTableColumnHeader label="Code" sortKey="code" />,
-        cell: ({ row }) => <CodeCell coupon={row.original} canEdit={canEdit} />,
+        cell: ({ row }) => <CodeCell coupon={row.original} />,
       },
       {
         id: "discountValue",
@@ -100,7 +97,7 @@ export function CouponTable({
           }),
       },
     ],
-    [canEdit]
+    []
   );
 
   return (

@@ -73,12 +73,3 @@ export async function getAdminCoupons(filters: AdminCouponFilters) {
 }
 
 export type AdminCouponListItem = Awaited<ReturnType<typeof getAdminCoupons>>["items"][number];
-
-/** Single-record fetch for the edit page — same file as the list query,
- *  mirroring where getAdminProductById lives relative to Products' list
- *  query (not a separate detail.ts; Coupon's edit view is just the row
- *  itself, no joined reviewer/product/purchase context the way Reviews'
- *  detail needed a richer separate file). */
-export async function getAdminCouponById(id: string) {
-  return prisma.coupon.findUnique({ where: { id } });
-}

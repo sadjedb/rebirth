@@ -10,10 +10,12 @@ export function CouponDetailsCard({
   state,
   dispatch,
   errors,
+  disabled = false,
 }: {
   state: CouponFormState;
   dispatch: Dispatch<CouponFormAction>;
   errors: Partial<Record<string, string>>;
+  disabled?: boolean;
 }) {
   return (
     <FormCard title="Coupon details">
@@ -22,10 +24,11 @@ export function CouponDetailsCard({
           id="code"
           type="text"
           value={state.code}
+          disabled={disabled}
           onChange={(e) =>
             dispatch({ type: "SET", field: "code", value: e.target.value.toUpperCase() })
           }
-          className={`${inputClass(Boolean(errors.code))} font-mono`}
+          className={`${inputClass(Boolean(errors.code))} font-mono disabled:opacity-60 disabled:cursor-not-allowed`}
         />
       </Field>
 
@@ -34,8 +37,9 @@ export function CouponDetailsCard({
           id="description"
           type="text"
           value={state.description}
+          disabled={disabled}
           onChange={(e) => dispatch({ type: "SET", field: "description", value: e.target.value })}
-          className={inputClass(Boolean(errors.description))}
+          className={`${inputClass(Boolean(errors.description))} disabled:opacity-60 disabled:cursor-not-allowed`}
         />
       </Field>
 
@@ -44,10 +48,11 @@ export function CouponDetailsCard({
           <select
             id="discountType"
             value={state.discountType}
+            disabled={disabled}
             onChange={(e) =>
               dispatch({ type: "SET", field: "discountType", value: e.target.value as CouponFormState["discountType"] })
             }
-            className={inputClass(false)}
+            className={`${inputClass(false)} disabled:opacity-60 disabled:cursor-not-allowed`}
           >
             <option value="PERCENTAGE">Percentage</option>
             <option value="FIXED_AMOUNT">Fixed amount</option>
@@ -68,8 +73,9 @@ export function CouponDetailsCard({
             max={state.discountType === "PERCENTAGE" ? 100 : undefined}
             step={1}
             value={state.discountValue}
+            disabled={disabled}
             onChange={(e) => dispatch({ type: "SET", field: "discountValue", value: e.target.value })}
-            className={inputClass(Boolean(errors.discountValue))}
+            className={`${inputClass(Boolean(errors.discountValue))} disabled:opacity-60 disabled:cursor-not-allowed`}
           />
         </Field>
       </div>
