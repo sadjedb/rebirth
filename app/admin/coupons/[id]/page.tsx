@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { requirePageAccess } from "@/lib/admin/auth";
 import { can } from "@/lib/admin/permissions";
 import { getCouponDetail, getCouponRedemptions } from "@/lib/coupons/detail";
+import { getCouponTimeline } from "@/lib/coupons/timeline";
 import { couponToFormState } from "@/app/admin/coupons/components/coupon-form-state";
 import { Breadcrumbs } from "@/components/admin/layout/Breadcrumbs";
 import { CouponForm } from "@/app/admin/coupons/components/CouponForm";
 import { UsageStatsCard } from "@/app/admin/coupons/components/cards/UsageStatsCard";
 import { RedemptionsCard } from "@/app/admin/coupons/components/cards/RedemptionsCard";
+import { CouponTimeline } from "@/app/admin/coupons/components/CouponTimeline";
 import { brand } from "@/config/brand";
 
 export const metadata: Metadata = {
@@ -22,21 +24,24 @@ export default async function CouponDetailPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   // Gated at coupons:view, not coupons:edit — this page also carries
-  // read-only usage/redemption data Staff should be able to see. The
-  // actual mutation stays independently protected by updateCoupon's own
-  // checkPermission("coupons:edit"); CouponForm's canEdit prop below
-  // only controls whether the form is interactive, not whether the
-  // mutation would be accepted.
+  // read-only usage/redemption/timeline data Staff should be able to
+  // see. The actual mutation stays independently protected by
+  // updateCoupon's own checkPermission("coupons:edit"); CouponForm's
+  // canEdit prop below only controls whether the form is interactive,
+  // not whether the mutation would be accepted. No separate permission
+  // for the timeline — it's part of this same coupons:view-gated page.
   const user = await requirePageAccess("coupons:view");
 
   const { id } = await params;
   const { page: pageParam } = await searchParams;
   const redemptionsPage = pageParam ? Number(pageParam) : 1;
 
-  const coupon = await getCouponDetail(id);
+  const [coupon, redemptions, timeline] = await Promise.all([
+    getCouponDetail(id),
+    getCouponRedemptions(id, redemptionsPage),
+    getCouponTimeline(id),
+  ]);
   if (!coupon) notFound();
-
-  const redemptions = await getCouponRedemptions(id, redemptionsPage);
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -76,6 +81,7 @@ export default async function CouponDetailPage({
           </div>
           <div className="space-y-6">
             <UsageStatsCard coupon={coupon} />
+            <CouponTimeline entries={timeline} />
           </div>
         </div>
       </div>
