@@ -15,6 +15,23 @@ The AI should **always continue from this document** instead of redesigning prev
 
 # Project Status
 
+```text
+Module 0  — Core Infrastructure         DONE
+Module 1  — Products                    DONE
+Module 2  — Orders                      DONE
+Module 3  — Customers                   DONE (Phases 1-3; no Phase 4 scheduled)
+Module 4  — Reviews                     DONE (all 6 phases)
+Module 5  — Coupons & Discounts         DONE (all 6 phases)
+Module 6  — Inventory                   NOT STARTED — next up
+Module 7  — Categories                  NOT STARTED
+Module 8  — Brands                      NOT STARTED
+Module 9  — Marketing                   NOT STARTED
+Module 10 — CMS                         NOT STARTED
+Module 11 — Analytics                   NOT STARTED
+Module 12 — Settings                    NOT STARTED
+Module 13 — Roles & Permissions         NOT STARTED
+```
+
 ## ✅ Module 0 — Core Infrastructure (Completed)
 
 Foundation shared by every module.
@@ -97,7 +114,7 @@ All formatting and transition logic are centralized.
 
 ---
 
-# 🚧 Module 3 — Customers (In Progress)
+# ✅ Module 3 — Customers (Completed)
 
 Current status:
 
@@ -107,7 +124,9 @@ including a follow-up query-efficiency/index review. See below.
 Deferred features (Internal Notes, Customer Timeline, Groups, Segments,
 Marketing Tags, Guest/Registered unification) remain unscheduled — see
 "Future (Not Part of Initial Module)" below. There is no Phase 4 for
-Customers; the module moves to Module 4 — Reviews next.
+Customers, and none is planned — this module is complete for the
+purposes of this roadmap unless one of the deferred features is
+explicitly scheduled in the future.
 
 ---
 
@@ -299,67 +318,108 @@ The following modules should be implemented **after Customers**, in order.
 
 ---
 
-# Module 4 — Reviews
+# ✅ Module 4 — Reviews (Completed)
 
 Purpose
 
 Customer product reviews.
 
-### Phase 1
+All six phases completed:
 
-Architecture
+- Phase 1 — Architecture ✅
+- Phase 2 — Review List + client submission infrastructure ✅
+- Phase 3 — Review Detail ✅
+- Phase 4 — Moderation (Approve / Reject / Spam) ✅
+- Phase 5 — Bulk moderation ✅
+- Phase 6 — Timeline ✅
 
-### Phase 2
+Key implementation notes for future modules to reuse or reference:
 
-Review List
+- `Review` model: `productId` required (RESTRICT — a review's subject
+  IS the product, unlike `OrderItem.productId`'s SetNull), `orderItemId`
+  NOT unique (duplicate rule is `@@unique([userId, productId])`, not
+  per-purchase). `permanentlyDeleteProduct` was extended with a
+  precondition check refusing hard-delete while reviews exist.
+- Moderation lifecycle: `PENDING → {APPROVED, REJECTED, SPAM}`, with
+  `REJECTED`/`SPAM` only correctable back through `PENDING` (never
+  directly into each other or into `APPROVED`). See `lib/reviews/status.ts`.
+- Permissions: `reviews:view` (Staff+), `reviews:moderate` (Manager+).
+- Bulk moderation reuses the exact same audit action names as
+  single-record moderation (`review.approve`, `review.reject`, etc.) —
+  a deliberate difference from Orders' `order.bulk_status_*` convention.
+  This required extending `lib/admin/bulk-actions.ts`'s
+  `BulkMutationOutcome` with an optional `metadataById` field (purely
+  additive — existing Orders/Products bulk actions are unaffected) so
+  each row's audit entry can carry its own `{from, to}`, since a single
+  bulk action can pull eligible rows from more than one origin status.
+- Timeline (`lib/reviews/timeline.ts`) tells a bulk-originated entry
+  apart from a single-record one via `metadata.batchSize`'s presence,
+  not a different action name (since the action names are shared).
 
-### Phase 3
+Reusable infrastructure this module added:
 
-Review Detail
-
-### Phase 4
-
-Moderation
-
-- Approve
-- Reject
-- Spam
-
-### Phase 5
-
-Bulk moderation
-
-### Phase 6
-
-Timeline
+- `lib/reviews/{admin,detail,status,eligibility,storefront,timeline}.ts`
+- `ReviewStatusBadge`, `ReviewTable`/`ReviewFilters`, moderation +
+  bulk-moderation UI patterns, `ReviewTimeline`
 
 ---
 
-# Module 5 — Coupons & Discounts
+# ✅ Module 5 — Coupons & Discounts (Completed)
 
-### Phase 1
+One unified system — a Coupon IS the discount mechanism (always
+code-based); there is no separate "Discounts" concept. The stale
+separate "Discounts" nav entry was collapsed into "Coupons" in
+`lib/admin/nav.ts`.
 
-Architecture
+All six phases completed:
 
-### Phase 2
+- Phase 1 — Architecture ✅
+- Phase 2 — Coupon List + checkout redemption infrastructure ✅
+- Phase 3 — Coupon Create/Edit ✅
+- Phase 4 — Usage Tracking ✅
+- Phase 5 — Bulk Actions ✅
+- Phase 6 — Audit Timeline ✅
 
-Coupon List
+Key implementation notes for future modules to reuse or reference:
 
-### Phase 3
+- `Coupon` model: `code` unique/normalized-uppercase, whole-dollar
+  integers throughout (`discountValue`, `minOrderValue` — this project
+  has not adopted cents precision, see `lib/money.ts`), a conditional
+  DB `CHECK` on `discountValue` (1–100 for `PERCENTAGE`, `>0` for
+  `FIXED_AMOUNT`). `usageCount` is server-only, never client-writable,
+  incremented atomically inside `createOrder`'s transaction.
+- No `CouponRedemption` model — every "usage tracking" fact (which
+  order, when, which customer) is derived from `Order.couponId` joined
+  against Order's existing fields. `Order.couponId` is nullable/SetNull
+  (a coupon is a supporting reference, not the order's subject, unlike
+  `Review.productId`).
+- `Order.discountTotal`/`total` are populated by coupon redemption;
+  `OrderItem.discount` is a separate, still-unused per-line mechanism —
+  deliberately untouched by this module.
+- Status lifecycle: `DRAFT ↔ ACTIVE ↔ ARCHIVED`, fully permissive
+  (mirrors `ProductStatus`, not Reviews' funnel-through-PENDING model).
+  Archiving IS this module's only "delete" — no `coupons:delete`/
+  `coupons:restore` capability exists.
+- Permissions: `coupons:view` (Staff+), `coupons:create`/`coupons:edit`
+  (Manager+). The Coupon Detail page (`/admin/coupons/[id]`) is gated at
+  `coupons:view` (not `coupons:edit`) since it also carries read-only
+  usage/redemption/timeline data — a Staff-only viewer sees the edit
+  form fully disabled. `coupons:edit` remains the actual mutation
+  boundary, enforced independently server-side.
+- Bulk actions use `coupon.bulk_status_<status>` audit action names
+  (distinct per target, unlike Reviews' shared-name convention) with
+  per-row `{from, to}` metadata via the same `metadataById` mechanism
+  Reviews' Phase 5 added to `lib/admin/bulk-actions.ts`.
 
-Coupon Create/Edit
+Reusable infrastructure this module added:
 
-### Phase 4
-
-Usage Tracking
-
-### Phase 5
-
-Bulk Actions
-
-### Phase 6
-
-Audit Timeline
+- `lib/coupons/{admin,detail,status,redemption,timeline}.ts`,
+  `app/admin/coupons/validators.ts`
+- `CouponEffectiveStateBadge` (derived display state, separate from the
+  persisted `status` enum — `getCouponEffectiveState` combines `status`
+  + `startsAt`/`endsAt`, never auto-transitions anything)
+- Checkout coupon-code apply/remove UI
+  (`components/checkout/CouponCodeInput.tsx`)
 
 ---
 
@@ -701,12 +761,15 @@ Before writing code:
 
 **Next implementation target:**
 
-> **Module 4 — Reviews**
+> **Module 6 — Inventory**
 >
-> Module 3 — Customers is done through Phase 3, plus the query-efficiency
-> index review above. Deferred Customer features remain unscheduled (see
-> "Future (Not Part of Initial Module)" above) — do not implement them
-> as an unofficial Phase 4.
+> Module 3 — Customers is done (Phases 1–3, no Phase 4 scheduled).
+> Module 4 — Reviews is done (all six phases). Module 5 — Coupons &
+> Discounts is done (all six phases). See each module's section above
+> for the key implementation decisions and reusable infrastructure a
+> new module should reference before adding anything of its own.
 >
-> Begin with **Phase 1 — Architecture** for Reviews (see Module 4 section
-> below) before any implementation.
+> Begin with **Phase 1 — Architecture** for Inventory (see Module 6
+> section above — it has 7 phases, not 6: Architecture, Stock
+> Dashboard, Stock Movements, Warehouses, Low Stock Alerts, Bulk
+> Adjustments, Timeline) before any implementation.
