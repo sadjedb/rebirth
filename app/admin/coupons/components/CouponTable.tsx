@@ -8,6 +8,12 @@ import { DataTableColumnHeader } from "@/components/admin/ui/DataTableColumnHead
 import { EmptyState } from "@/components/admin/ui/EmptyState";
 import { CouponEffectiveStateBadge } from "@/app/admin/coupons/components/CouponEffectiveStateBadge";
 import { getCouponEffectiveState } from "@/lib/coupons/status";
+import type { BulkAction } from "@/components/admin/ui/BulkActionBar";
+import {
+  bulkSetCouponsActive,
+  bulkSetCouponsDraft,
+  bulkSetCouponsArchived,
+} from "@/app/admin/coupons/actions";
 import type { AdminCouponListItem } from "@/lib/coupons/admin";
 
 function DiscountCell({ coupon }: { coupon: AdminCouponListItem }) {
@@ -51,6 +57,7 @@ export function CouponTable({
   totalCount,
   hasActiveFilters,
   filters,
+  canEdit,
 }: {
   coupons: AdminCouponListItem[];
   page: number;
@@ -59,6 +66,11 @@ export function CouponTable({
   totalCount: number;
   hasActiveFilters: boolean;
   filters: React.ReactNode;
+  /** Gates the bulk action bar only — the code-cell link above is always
+   *  shown regardless (see CodeCell's own comment). The real
+   *  authorization boundary is server-side: every bulk action's
+   *  withAuditedBulkMutation("coupons:edit", ...) call, not this prop. */
+  canEdit: boolean;
 }) {
   const columns = useMemo<ColumnDef<AdminCouponListItem, unknown>[]>(
     () => [
@@ -100,6 +112,40 @@ export function CouponTable({
     []
   );
 
+  const bulkActions = useMemo<BulkAction[]>(() => {
+    if (!canEdit) return [];
+
+    // Always offered regardless of the selection's current statuses —
+    // server-side eligibility (canTransitionCouponStatus, same shared
+    // helper Phase 3's single-record edit uses) decides per row what
+    // actually applies, reported back via `skipped` and surfaced by
+    // BulkActionBar. Same shape as Reviews' bulk action buttons.
+    return [
+      {
+        id: "bulk-activate",
+        label: "Activate",
+        run: (ids) => bulkSetCouponsActive(ids),
+      },
+      {
+        id: "bulk-draft",
+        label: "Move to draft",
+        run: (ids) => bulkSetCouponsDraft(ids),
+      },
+      {
+        id: "bulk-archive",
+        label: "Archive",
+        variant: "danger",
+        confirm: {
+          title: "Archive these coupons?",
+          description:
+            "Archived coupons can no longer be redeemed at checkout. You can reactivate them later if needed.",
+          confirmLabel: "Archive",
+        },
+        run: (ids) => bulkSetCouponsArchived(ids),
+      },
+    ];
+  }, [canEdit]);
+
   return (
     <DataTable
       columns={columns}
@@ -111,6 +157,7 @@ export function CouponTable({
       totalCount={totalCount}
       searchPlaceholder="Search by code or description…"
       filters={filters}
+      bulkActions={bulkActions}
       emptyState={
         <EmptyState
           title={hasActiveFilters ? "No matching coupons" : "No coupons yet"}

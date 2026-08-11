@@ -36,6 +36,7 @@ export default async function AdminCouponsPage({
 
   const hasActiveFilters = Boolean(params.search || params.status);
   const canCreate = can(user.role, "coupons:create");
+  const canEdit = can(user.role, "coupons:edit");
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -74,6 +75,7 @@ export default async function AdminCouponsPage({
         totalCount={total}
         hasActiveFilters={hasActiveFilters}
         filters={<CouponFilters />}
+        canEdit={canEdit}
       />
     </div>
   );
