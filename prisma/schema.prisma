@@ -225,9 +225,12 @@ model Product {
   icon ProductIcon?
   tone String?
 
-  /// No variant model yet (see Module 1 architecture notes) — a future
-  /// Variants module would introduce ProductVariant and migrate
-  /// OrderItem off productId+size-as-string onto variantId.
+  /// Module 6 (Inventory) introduces ProductVariant as the authoritative
+  /// per-color/size stock unit — see that model's doc comment. `sizes`
+  /// here remains the storefront's current (pre-Module-6-Phase-3) size
+  /// picker source; it is not yet linked to variant stock and is not
+  /// modified by Phase 2. Migration/deprecation happens in Phase 3 per
+  /// the approved Module 6 architecture.
   details String[]
   sizes   String[]
 
@@ -244,11 +247,61 @@ model Product {
 
   orderItems OrderItem[]
   reviews    Review[]
+  variants   ProductVariant[]
 
   @@index([status])
   @@index([categoryId])
   @@index([deletedAt])
   @@index([createdAt])
+}
+
+/// Module 6 (Inventory), Phase 2 prerequisite. Per the approved Module 6
+/// architecture, ProductVariant — not Product — is the authoritative
+/// per-color/size stock unit. This table is added now (Phase 2) purely so
+/// the read-only Stock Dashboard has something to query; it intentionally
+/// has zero rows until Phase 3's legacy migration backfills one default
+/// variant per existing Product (see the Module 6 architecture notes —
+/// Phase 2 explicitly excludes running that backfill). Product's own
+/// stock/lowStockThreshold/trackInventory/continueSellingOutOfStock/sku
+/// fields are untouched and still authoritative until Phase 3.
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  color String?
+  size  String?
+  /// Server-computed, never user-edited. Normalizes color/size (each
+  /// lowercased, "-" for unset) into a value Postgres can treat as
+  /// unique — NULL isn't unique-comparable, so a raw
+  /// @@unique([productId, color, size]) would silently allow duplicate
+  /// variants whenever either column is null.
+  variantKey String
+
+  /// Per-variant inventory identifier, distinct from Product.sku (which
+  /// remains a separate, catalog-level identifier — see its own doc
+  /// comment). Optional: not populated until Phase 3's migration.
+  sku String? @unique
+
+  stock                     Int     @default(0)
+  lowStockThreshold         Int?
+  trackInventory            Boolean @default(true)
+  continueSellingOutOfStock Boolean @default(false)
+
+  /// Distinct from Product.status (editorial, product-wide). A variant
+  /// can be deactivated — removed from new purchasing — while its sku,
+  /// stock, movement history, and historical OrderItem relationships all
+  /// remain intact, and it can be reactivated later. Plain boolean, no
+  /// state machine: a variant is a sub-entity of Product, not an
+  /// independently top-level admin object.
+  isActive Boolean @default(true)
+  position Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, variantKey])
+  @@index([productId])
 }
 
 /// Infrastructure, not a feature — every mutating admin action writes here

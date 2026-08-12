@@ -28,7 +28,15 @@ export type Capability =
   | "reviews:moderate"
   | "coupons:view"
   | "coupons:create"
-  | "coupons:edit";
+  | "coupons:edit"
+  // Module 6 (Inventory). Only "view" is granted anywhere below for now —
+  // this is a read-only Phase 2. "inventory:adjust" and
+  // "inventory:manage_warehouses" are named in the approved Module 6
+  // architecture but intentionally not added to this union yet: adding an
+  // unused capability now would be speculative, and the roadmap's own
+  // convention (see Coupons/Reviews) is to introduce each capability in
+  // the phase that actually gates something with it.
+  | "inventory:view";
 
 /**
  * Role → capability lookup. This is the ONLY place role/capability logic
@@ -47,6 +55,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "customers:view",
     "reviews:view",
     "coupons:view",
+    "inventory:view",
   ],
   MANAGER: [
     "admin:access",
@@ -62,6 +71,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "coupons:view",
     "coupons:create",
     "coupons:edit",
+    "inventory:view",
   ],
   ADMIN: [
     "admin:access",
@@ -81,6 +91,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "coupons:view",
     "coupons:create",
     "coupons:edit",
+    "inventory:view",
   ],
   SUPER_ADMIN: [
     "admin:access",
@@ -102,6 +113,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "coupons:view",
     "coupons:create",
     "coupons:edit",
+    "inventory:view",
   ],
 };
 

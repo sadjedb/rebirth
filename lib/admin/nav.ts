@@ -15,7 +15,7 @@ export const ADMIN_NAV: NavItem[] = [
       { label: "Products", href: "/admin/products", implemented: true },
       { label: "Categories", href: "/admin/categories", implemented: false },
       { label: "Collections", href: "/admin/collections", implemented: false },
-      { label: "Inventory", href: "/admin/inventory", implemented: false },
+      { label: "Inventory", href: "/admin/inventory", implemented: true },
       { label: "Brands", href: "/admin/brands", implemented: false },
       { label: "Tags", href: "/admin/tags", implemented: false },
     ],
