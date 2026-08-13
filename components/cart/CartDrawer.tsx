@@ -75,7 +75,7 @@ export function CartDrawer() {
           <>
             <div className="flex-1 overflow-y-auto px-6">
               {items.map((item) => (
-                <CartLineItem key={`${item.productId}::${item.size}`} item={item} />
+                <CartLineItem key={item.variantId} item={item} />
               ))}
             </div>
 

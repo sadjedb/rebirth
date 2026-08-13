@@ -28,13 +28,6 @@ export type ProductFormState = {
   compareAtPrice: string;
   costPrice: string;
 
-  sku: string;
-  stock: string;
-  lowStockThreshold: string;
-  trackInventory: boolean;
-  continueSellingOutOfStock: boolean;
-  sizes: string[];
-
   category: OrganizationRefValue | null;
   collections: OrganizationRefValue[];
   tags: OrganizationRefValue[];

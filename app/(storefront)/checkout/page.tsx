@@ -62,7 +62,7 @@ export default function CheckoutPage() {
                 </p>
                 <div className="border-t border-stone/20">
                   {items.map((item) => (
-                    <CartLineItem key={`${item.productId}::${item.size}`} item={item} />
+                    <CartLineItem key={item.variantId} item={item} />
                   ))}
                 </div>
                 <div className="flex items-center justify-between text-base pt-5">

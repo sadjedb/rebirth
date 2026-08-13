@@ -1,6 +1,6 @@
 "use server";
 
-import { checkoutSchema, createOrder, CouponRedemptionError } from "@/lib/orders/storefront";
+import { checkoutSchema, createOrder, CouponRedemptionError, OutOfStockError } from "@/lib/orders/storefront";
 import { validateCoupon } from "@/lib/coupons/redemption";
 import { getSession } from "@/lib/session";
 import type { CartItem } from "@/lib/cart-context";
@@ -70,6 +70,9 @@ export async function submitOrder(
     return { success: true, orderId: order.id };
   } catch (error) {
     if (error instanceof CouponRedemptionError) {
+      return { success: false, fieldErrors: {}, formError: error.message };
+    }
+    if (error instanceof OutOfStockError) {
       return { success: false, fieldErrors: {}, formError: error.message };
     }
     throw error;

@@ -35,7 +35,9 @@ export function CartLineItem({ item }: { item: CartItem }) {
               {item.name}
             </Link>
             <p className="font-mono text-[11px] text-stone mt-1">
-              {item.code} · Size {item.size}
+              {item.code}
+              {(item.color || item.size) && " · "}
+              {[item.color, item.size ? `Size ${item.size}` : null].filter(Boolean).join(" / ")}
             </p>
           </div>
           <p className="font-mono text-sm text-sumi shrink-0">
@@ -48,7 +50,7 @@ export function CartLineItem({ item }: { item: CartItem }) {
             <button
               type="button"
               aria-label={`Decrease quantity of ${item.name}`}
-              onClick={() => setQuantity(item.productId, item.size, item.quantity - 1)}
+              onClick={() => setQuantity(item.variantId, item.quantity - 1)}
               className="w-8 h-8 text-sumi hover:bg-bone/50 transition-colors"
             >
               −
@@ -59,7 +61,7 @@ export function CartLineItem({ item }: { item: CartItem }) {
             <button
               type="button"
               aria-label={`Increase quantity of ${item.name}`}
-              onClick={() => setQuantity(item.productId, item.size, item.quantity + 1)}
+              onClick={() => setQuantity(item.variantId, item.quantity + 1)}
               className="w-8 h-8 text-sumi hover:bg-bone/50 transition-colors"
             >
               +
@@ -68,7 +70,7 @@ export function CartLineItem({ item }: { item: CartItem }) {
 
           <button
             type="button"
-            onClick={() => removeItem(item.productId, item.size)}
+            onClick={() => removeItem(item.variantId)}
             className="text-xs text-stone underline hover:text-shu transition-colors"
           >
             Remove

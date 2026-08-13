@@ -49,13 +49,6 @@ export const productFormSchema = z.object({
   compareAtPrice: optionalNonNegativeInt(),
   costPrice: optionalNonNegativeInt(),
 
-  sku: z.string().trim().optional(),
-  stock: z.coerce.number().int().min(0).default(0),
-  lowStockThreshold: optionalNonNegativeInt(),
-  trackInventory: z.boolean().default(true),
-  continueSellingOutOfStock: z.boolean().default(false),
-  sizes: z.array(z.string().trim().min(1)).default([]),
-
   category: organizationRefSchema.nullable(),
   collections: z.array(organizationRefSchema).default([]),
   tags: z.array(organizationRefSchema).default([]),

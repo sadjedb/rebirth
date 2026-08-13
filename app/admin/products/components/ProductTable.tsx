@@ -6,7 +6,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/admin/ui/DataTable";
 import { DataTableColumnHeader } from "@/components/admin/ui/DataTableColumnHeader";
 import { EmptyState } from "@/components/admin/ui/EmptyState";
-import { Badge } from "@/components/admin/ui/Badge";
 import { formatMoney } from "@/lib/money";
 import type { AdminProductListItem } from "@/lib/products/admin";
 import { ProductStatusBadge } from "@/app/admin/products/components/ProductStatusBadge";
@@ -39,7 +38,7 @@ function ProductCell({ product, linkToEdit }: { product: AdminProductListItem; l
       )}
       <div className="min-w-0">
         <p className="text-admin-fg truncate">{product.name}</p>
-        <p className="text-xs text-admin-muted truncate">{product.sku ?? product.code}</p>
+        <p className="text-xs text-admin-muted truncate">{product.code}</p>
       </div>
     </>
   );
@@ -108,23 +107,6 @@ export function ProductTable({
         id: "price",
         header: () => <DataTableColumnHeader label="Price" sortKey="price" />,
         cell: ({ row }) => formatMoney(row.original.price),
-      },
-      {
-        id: "stock",
-        header: () => <DataTableColumnHeader label="Stock" sortKey="stock" />,
-        cell: ({ row }) => {
-          const product = row.original;
-          const isLow =
-            product.trackInventory &&
-            product.lowStockThreshold != null &&
-            product.stock <= product.lowStockThreshold;
-          return (
-            <div className="flex items-center gap-2">
-              <span>{product.trackInventory ? product.stock : "—"}</span>
-              {isLow && <Badge variant="warning">Low</Badge>}
-            </div>
-          );
-        },
       },
       {
         id: "updatedAt",
@@ -222,7 +204,7 @@ export function ProductTable({
       pageCount={pageCount}
       pageSize={pageSize}
       totalCount={totalCount}
-      searchPlaceholder="Search by name, SKU, or code…"
+      searchPlaceholder="Search by name or code…"
       filters={filters}
       bulkActions={bulkActions}
       emptyState={

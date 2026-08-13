@@ -17,8 +17,10 @@ export type AdminProductFilters = {
 };
 
 /** Whitelisted — `sort` comes from a URL param, never pass user input
- *  straight into Prisma's orderBy key. */
-const SORTABLE_COLUMNS = ["name", "price", "stock", "status", "createdAt", "updatedAt"] as const;
+ *  straight into Prisma's orderBy key. "stock" was removed in Module 6
+ *  Phase 3 — stock is a per-variant fact now (see /admin/inventory's own
+ *  sortable columns), not a Product column. */
+const SORTABLE_COLUMNS = ["name", "price", "status", "createdAt", "updatedAt"] as const;
 type SortableColumn = (typeof SORTABLE_COLUMNS)[number];
 
 function isSortableColumn(value: string | undefined): value is SortableColumn {
@@ -39,9 +41,11 @@ export async function getAdminProducts(filters: AdminProductFilters) {
     ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
     ...(filters.search
       ? {
+          // sku search moved to /admin/inventory in Module 6 Phase 3 —
+          // Product no longer has its own sku field (ProductVariant.sku
+          // is the sole SKU now).
           OR: [
             { name: { contains: filters.search, mode: "insensitive" } },
-            { sku: { contains: filters.search, mode: "insensitive" } },
             { code: { contains: filters.search, mode: "insensitive" } },
           ],
         }

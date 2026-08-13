@@ -181,3 +181,57 @@ export async function getInventoryFilterOptions() {
     sizes: sizes.map((s) => s.size as string),
   };
 }
+
+/**
+ * Module 6 (Inventory), Phase 3. Powers /admin/inventory/[productId] —
+ * a product's full variant list (for manual adjustment) plus its recent
+ * movement history. Distinct from Phase 7's Timeline: this is a plain,
+ * un-styled recent-activity list scoped to Phase 3's own needs (seeing
+ * what an adjustment just did), not the polished per-variant/per-product
+ * timeline UI Phase 7 will build.
+ */
+export async function getProductInventoryDetail(productId: string) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { id: true, name: true, slug: true },
+  });
+  if (!product) return null;
+
+  const [variants, movements] = await Promise.all([
+    prisma.productVariant.findMany({
+      where: { productId },
+      orderBy: { position: "asc" },
+      select: {
+        id: true,
+        color: true,
+        size: true,
+        sku: true,
+        stock: true,
+        lowStockThreshold: true,
+        trackInventory: true,
+        continueSellingOutOfStock: true,
+        isActive: true,
+      },
+    }),
+    prisma.stockMovement.findMany({
+      where: { productId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        variantId: true,
+        quantityDelta: true,
+        resultingStock: true,
+        reason: true,
+        note: true,
+        orderId: true,
+        actorEmail: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  return { product, variants, movements };
+}
+
+export type ProductInventoryDetail = NonNullable<Awaited<ReturnType<typeof getProductInventoryDetail>>>;

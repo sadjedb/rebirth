@@ -12,19 +12,31 @@ import type { Product } from "@/lib/products/storefront";
 
 export type CartItem = {
   productId: string;
+  /** Module 6 (Inventory), Phase 3 — the line's real identity (see
+   *  lineKey below). Resolved and validated by AddToBag before an item
+   *  can ever be added; never trusted as-is at checkout — createOrder
+   *  re-fetches and re-validates every variant fresh. */
+  variantId: string;
   slug: string;
   name: string;
   code: string;
   price: number;
   tone: string;
   icon: Product["icon"];
-  size: string;
+  /** Display snapshots only, taken from the resolved variant at
+   *  add-to-cart time — null for a product with no size/color dimension
+   *  (the single default/legacy variant). Not re-validated client-side;
+   *  variantId is what checkout actually resolves against. */
+  size: string | null;
+  color: string | null;
   quantity: number;
 };
 
-/** Uniquely identifies a line — same product in two sizes is two lines. */
-function lineKey(item: Pick<CartItem, "productId" | "size">) {
-  return `${item.productId}::${item.size}`;
+/** Uniquely identifies a line. variantId alone is already
+ *  globally unique (Module 6 Phase 3) — no need to combine it with
+ *  productId the way the old productId+size key had to. */
+function lineKey(item: Pick<CartItem, "variantId">) {
+  return item.variantId;
 }
 
 type CartState = {
@@ -34,8 +46,8 @@ type CartState = {
 
 type CartAction =
   | { type: "ADD"; item: Omit<CartItem, "quantity">; quantity: number }
-  | { type: "REMOVE"; productId: string; size: string }
-  | { type: "SET_QUANTITY"; productId: string; size: string; quantity: number }
+  | { type: "REMOVE"; variantId: string }
+  | { type: "SET_QUANTITY"; variantId: string; quantity: number }
   | { type: "CLEAR" }
   | { type: "HYDRATE"; items: CartItem[] };
 
@@ -64,21 +76,17 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case "REMOVE":
       return {
         ...state,
-        items: state.items.filter(
-          (i) => lineKey(i) !== lineKey({ productId: action.productId, size: action.size })
-        ),
+        items: state.items.filter((i) => lineKey(i) !== lineKey({ variantId: action.variantId })),
       };
 
     case "SET_QUANTITY": {
-      const key = lineKey({ productId: action.productId, size: action.size });
+      const key = lineKey({ variantId: action.variantId });
       if (action.quantity <= 0) {
         return { ...state, items: state.items.filter((i) => lineKey(i) !== key) };
       }
       return {
         ...state,
-        items: state.items.map((i) =>
-          lineKey(i) === key ? { ...i, quantity: action.quantity } : i
-        ),
+        items: state.items.map((i) => (lineKey(i) === key ? { ...i, quantity: action.quantity } : i)),
       };
     }
 
@@ -99,8 +107,8 @@ type CartContextValue = {
   openDrawer: () => void;
   closeDrawer: () => void;
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
-  removeItem: (productId: string, size: string) => void;
-  setQuantity: (productId: string, size: string, quantity: number) => void;
+  removeItem: (variantId: string) => void;
+  setQuantity: (variantId: string, quantity: number) => void;
   clearCart: () => void;
 };
 
@@ -144,9 +152,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
     openDrawer: () => setDrawerOpen(true),
     closeDrawer: () => setDrawerOpen(false),
     addItem: (item, quantity = 1) => dispatch({ type: "ADD", item, quantity }),
-    removeItem: (productId, size) => dispatch({ type: "REMOVE", productId, size }),
-    setQuantity: (productId, size, quantity) =>
-      dispatch({ type: "SET_QUANTITY", productId, size, quantity }),
+    removeItem: (variantId) => dispatch({ type: "REMOVE", variantId }),
+    setQuantity: (variantId, quantity) => dispatch({ type: "SET_QUANTITY", variantId, quantity }),
     clearCart: () => dispatch({ type: "CLEAR" }),
   };
 

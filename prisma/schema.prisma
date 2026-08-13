@@ -125,6 +125,19 @@ enum CouponStatus {
 }
 
 /// Deliberately flat for now — no parentId/hierarchy. Extend later if needed.
+/// Module 6 (Inventory), Phase 3.
+enum StockMovementReason {
+  ORDER_PLACED
+  ORDER_CANCELLED
+  MANUAL_ADJUSTMENT
+  BULK_ADJUSTMENT
+  /// Reserved — not wired to anything in Module 6's seven phases, but
+  /// costs nothing to have in the enum now vs. a migration later (same
+  /// justification pattern as Product.type: PHYSICAL/DIGITAL/
+  /// SUBSCRIPTION).
+  RESTOCK
+}
+
 model Category {
   id           String    @id @default(cuid())
   name         String
@@ -197,20 +210,17 @@ model Product {
   /// but costs nothing to have now vs. a non-nullable-column migration later.
   type   ProductType   @default(PHYSICAL)
 
-  /// Cosmetic storefront label (e.g. "MN-014 / BLK") — distinct from `sku`,
-  /// which is the real inventory identifier admin manages. Keeping both:
-  /// they serve different audiences and will very likely diverge.
+  /// Cosmetic storefront label (e.g. "MN-014 / BLK") — the real
+  /// inventory identifier now lives on ProductVariant.sku (Module 6,
+  /// Phase 3). Product no longer has its own sku: keeping two SKU
+  /// fields would recreate the "two competing sources of truth" problem
+  /// `sizes` used to have, for no gain — see the Module 6 architecture
+  /// notes.
   code String
-  sku  String? @unique
 
   price          Int
   compareAtPrice Int?
   costPrice      Int?
-
-  stock                     Int     @default(0)
-  lowStockThreshold         Int?
-  trackInventory            Boolean @default(true)
-  continueSellingOutOfStock Boolean @default(false)
 
   categoryId String?
   category   Category?    @relation(fields: [categoryId], references: [id])
@@ -225,14 +235,13 @@ model Product {
   icon ProductIcon?
   tone String?
 
-  /// Module 6 (Inventory) introduces ProductVariant as the authoritative
-  /// per-color/size stock unit — see that model's doc comment. `sizes`
-  /// here remains the storefront's current (pre-Module-6-Phase-3) size
-  /// picker source; it is not yet linked to variant stock and is not
-  /// modified by Phase 2. Migration/deprecation happens in Phase 3 per
-  /// the approved Module 6 architecture.
+  /// Module 6 (Inventory), Phase 3: `sizes` (the old free-text storefront
+  /// size list) is removed — ProductVariant.size is now the sole
+  /// authoritative purchasable-size source, and ProductVariant is the
+  /// sole stock unit (see that model's doc comment). This is an atomic
+  /// cutover, not a gradual migration: there is no intermediate period
+  /// where both `Product.sizes` and `ProductVariant.size` are read.
   details String[]
-  sizes   String[]
 
   metaTitle       String?
   metaDescription String?
@@ -255,15 +264,15 @@ model Product {
   @@index([createdAt])
 }
 
-/// Module 6 (Inventory), Phase 2 prerequisite. Per the approved Module 6
-/// architecture, ProductVariant — not Product — is the authoritative
-/// per-color/size stock unit. This table is added now (Phase 2) purely so
-/// the read-only Stock Dashboard has something to query; it intentionally
-/// has zero rows until Phase 3's legacy migration backfills one default
-/// variant per existing Product (see the Module 6 architecture notes —
-/// Phase 2 explicitly excludes running that backfill). Product's own
-/// stock/lowStockThreshold/trackInventory/continueSellingOutOfStock/sku
-/// fields are untouched and still authoritative until Phase 3.
+/// Module 6 (Inventory). The authoritative per-color/size stock unit —
+/// ProductVariant.stock is the ONLY authoritative stock quantity in the
+/// system (Product's own stock/lowStockThreshold/trackInventory/
+/// continueSellingOutOfStock/sku were removed in Phase 3; see this
+/// model's field comments and the Module 6 architecture notes). Added
+/// empty in Phase 2 purely so the read-only Stock Dashboard had
+/// something to query; Phase 3 is what actually backfills one default
+/// variant per existing Product and makes this the real source of truth
+/// checkout/cancellation/admin adjustments all operate on.
 model ProductVariant {
   id        String  @id @default(cuid())
   productId String
@@ -278,9 +287,9 @@ model ProductVariant {
   /// variants whenever either column is null.
   variantKey String
 
-  /// Per-variant inventory identifier, distinct from Product.sku (which
-  /// remains a separate, catalog-level identifier — see its own doc
-  /// comment). Optional: not populated until Phase 3's migration.
+  /// Per-variant inventory identifier — the sole SKU field in the system
+  /// as of Phase 3 (Product.sku was removed; see Product's own doc
+  /// comment).
   sku String? @unique
 
   stock                     Int     @default(0)
@@ -300,8 +309,104 @@ model ProductVariant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  movements  StockMovement[]
+  orderItems OrderItem[]
+
   @@unique([productId, variantKey])
   @@index([productId])
+}
+
+/// Module 6 (Inventory), Phase 3. Immutable, append-only record of every
+/// change to a ProductVariant's stock counter. ProductVariant.stock
+/// always equals the variant's starting stock plus the sum of all its
+/// StockMovement.quantityDelta values — this is what makes stock history
+/// auditable/trustworthy. No edit path exists anywhere in the app; a
+/// correction is a new compensating movement with the opposite-signed
+/// delta, never a rewrite of an existing row.
+///
+/// quantityDelta is a STOCK-COUNTER delta, not a sales-quantity field —
+/// it records exactly what changed on ProductVariant.stock, nothing
+/// more. OrderItem.quantity remains the sole authoritative snapshot of
+/// the quantity actually purchased. The two are allowed to diverge under
+/// overselling (continueSellingOutOfStock = true): a movement's
+/// magnitude can be smaller than the OrderItem.quantity it's associated
+/// with, because the counter was already at (or being floored to) zero.
+/// See lib/inventory/movements.ts.
+model StockMovement {
+  id        String         @id @default(cuid())
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  /// Denormalized, not derived via join — matches this project's
+  /// consistent preference for narrow `select`s over `include`s. Lets
+  /// "all movements for this product across every variant" (the
+  /// hard-delete precondition, the future Phase 7 timeline) be queried
+  /// without joining through ProductVariant.
+  productId String
+
+  /// Signed. See this model's doc comment for the stock-counter-vs-
+  /// sales-quantity distinction — do not read this as "units sold".
+  quantityDelta Int
+  /// Snapshot of the variant's stock immediately after this movement
+  /// applied — written once, inside the same transaction as the delta,
+  /// never recomputed. Makes a movement self-explanatory in a timeline
+  /// UI ("12 → 9") without replaying the whole history.
+  resultingStock Int
+
+  reason StockMovementReason
+  /// Required by the server action when reason = MANUAL_ADJUSTMENT or
+  /// BULK_ADJUSTMENT; null for every system-originated reason
+  /// (ORDER_PLACED/ORDER_CANCELLED are self-explanatory from orderId).
+  note String?
+
+  /// Set only when reason implies an order. Cascade would be wrong here
+  /// (unlike variantId below) — an order's own row isn't this
+  /// movement's subject, just a supporting reference, same reasoning
+  /// Order.couponId already uses.
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  /// Reporting/tagging dimension only (Module 6 Warehouse Strategy —
+  /// Option A) — never drives ProductVariant.stock math. Nullable: no
+  /// Phase 3 movement ever populates this; Phase 4 is what starts
+  /// setting it.
+  warehouseId String?
+  warehouse   Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  /// Null for system-originated movements (checkout, cancellation) —
+  /// same actor-nullability precedent as AuditLog.actorId/logActivity's
+  /// guest-checkout case. Always set for MANUAL_ADJUSTMENT/
+  /// BULK_ADJUSTMENT.
+  actorId    String?
+  actorEmail String?
+
+  createdAt DateTime @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([productId, createdAt])
+  @@index([orderId])
+  @@index([warehouseId])
+  @@index([createdAt])
+}
+
+/// Module 6 (Inventory), Phase 3 schema seam / Phase 4 feature.
+/// Reporting/organizational metadata only (Warehouse Strategy Option A —
+/// see the Module 6 architecture notes): StockMovement.warehouseId is a
+/// historical-context label, never a second inventory source of truth.
+/// ProductVariant.stock remains the only authoritative stock quantity
+/// regardless of whether a movement has a warehouse attached. No
+/// warehouse CRUD/UI exists yet (Phase 4) — this table exists now purely
+/// so the StockMovement.warehouseId column has something to reference.
+model Warehouse {
+  id        String    @id @default(cuid())
+  name      String
+  code      String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  movements StockMovement[]
+
+  @@index([deletedAt])
 }
 
 /// Infrastructure, not a feature — every mutating admin action writes here
@@ -418,6 +523,11 @@ model Order {
 
   items     OrderItem[]
   addresses OrderAddress[]
+  /// Module 6 (Inventory), Phase 3 — ORDER_PLACED/ORDER_CANCELLED
+  /// movements referencing this order. Supporting reference only, same
+  /// role couponId already plays; an order's own line items/totals stay
+  /// the source of truth for what was purchased.
+  stockMovements StockMovement[]
 
   @@index([status])
   @@index([paymentStatus])
@@ -477,11 +587,22 @@ model OrderItem {
   /// permanently-deleted product must never be blocked by, or destroy,
   /// historical order records.
   productId String?
+  /// Module 6 (Inventory), Phase 3. Convenience link only, exactly like
+  /// productId above — the historical truth of what was purchased is
+  /// entirely in this row's own snapshot fields (name/code/sku/price/
+  /// tone/icon/size/color). A pre-Phase-3 order keeps this null forever;
+  /// no backfill is attempted (there's no reliable way to reconstruct
+  /// which never-recorded variant a historical purchase belonged to).
+  variantId String?
   slug      String
   name      String
   code      String
-  sku       String?
-  price     Int
+  /// As of Module 6 Phase 3, sourced from ProductVariant.sku at
+  /// order-creation time (Product no longer has its own sku — see
+  /// Product's doc comment). Field name/shape unchanged; only the data
+  /// source moved.
+  sku    String?
+  price  Int
   /// Per-line discount amount, snapshotted.
   discount  Int @default(0)
   /// (price - discount) * quantity, computed once at creation and
@@ -491,10 +612,15 @@ model OrderItem {
   tone      String
   icon      ProductIcon
   size      String
+  /// Module 6 (Inventory), Phase 3 snapshot — color the customer
+  /// actually purchased. Null for pre-Phase-3 orders and for
+  /// products/variants with no color dimension.
+  color     String?
   quantity  Int
 
-  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
   /// Not @unique on Review.orderItemId — see Review's own doc comment —
   /// so this is structurally a list even though in practice a given
   /// OrderItem never ends up with more than one Review (the reviewer's
@@ -503,6 +629,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+  @@index([variantId])
 }
 
 /// Module 4 (Reviews). A Review is anchored to a specific completed

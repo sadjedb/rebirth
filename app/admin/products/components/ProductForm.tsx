@@ -88,12 +88,6 @@ export function ProductForm(props: ProductFormProps) {
       price: state.price,
       compareAtPrice: state.compareAtPrice,
       costPrice: state.costPrice,
-      sku: state.sku,
-      stock: state.stock,
-      lowStockThreshold: state.lowStockThreshold,
-      trackInventory: state.trackInventory,
-      continueSellingOutOfStock: state.continueSellingOutOfStock,
-      sizes: state.sizes,
       category: state.category,
       collections: state.collections,
       tags: state.tags,
@@ -144,7 +138,7 @@ export function ProductForm(props: ProductFormProps) {
           <GeneralCard state={state} dispatch={dispatch} errors={errors} />
           <MediaCard state={state} dispatch={dispatch} errors={errors} />
           <PricingCard state={state} dispatch={dispatch} errors={errors} />
-          <InventoryCard state={state} dispatch={dispatch} errors={errors} />
+          <InventoryCard productId={mode === "edit" ? props.productId : undefined} />
           <SeoCard state={state} dispatch={dispatch} errors={errors} />
         </div>
 

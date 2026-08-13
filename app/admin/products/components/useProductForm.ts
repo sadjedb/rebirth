@@ -19,13 +19,6 @@ export const emptyProductForm: ProductFormState = {
   compareAtPrice: "",
   costPrice: "",
 
-  sku: "",
-  stock: "0",
-  lowStockThreshold: "",
-  trackInventory: true,
-  continueSellingOutOfStock: false,
-  sizes: [],
-
   category: null,
   collections: [],
   tags: [],
@@ -48,8 +41,7 @@ export type ProductFormAction =
   | { type: "SET_CATEGORY"; value: OrganizationRefValue | null }
   | { type: "SET_COLLECTIONS"; value: OrganizationRefValue[] }
   | { type: "SET_TAGS"; value: OrganizationRefValue[] }
-  | { type: "SET_DETAILS"; value: string[] }
-  | { type: "SET_SIZES"; value: string[] };
+  | { type: "SET_DETAILS"; value: string[] };
 
 function reducer(state: ProductFormState, action: ProductFormAction): ProductFormState {
   switch (action.type) {
@@ -109,8 +101,6 @@ function reducer(state: ProductFormState, action: ProductFormAction): ProductFor
       return { ...state, tags: action.value };
     case "SET_DETAILS":
       return { ...state, details: action.value };
-    case "SET_SIZES":
-      return { ...state, sizes: action.value };
 
     default:
       return state;

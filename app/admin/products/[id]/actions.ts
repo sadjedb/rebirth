@@ -70,23 +70,14 @@ export async function updateProduct(
     }
   }
 
-  const [slugTaken, skuTaken] = await Promise.all([
-    prisma.product.findFirst({
-      where: { slug: values.slug, id: { not: id } },
-      select: { id: true },
-    }),
-    values.sku
-      ? prisma.product.findFirst({
-          where: { sku: values.sku, id: { not: id } },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-  ]);
+  // (SKU uniqueness moved to ProductVariant in Module 6 Phase 3 —
+  // Product no longer has its own sku field to check.)
+  const slugTaken = await prisma.product.findFirst({
+    where: { slug: values.slug, id: { not: id } },
+    select: { id: true },
+  });
   if (slugTaken) {
     return { success: false, fieldErrors: { slug: "This URL slug is already in use." } };
-  }
-  if (skuTaken) {
-    return { success: false, fieldErrors: { sku: "This SKU is already in use." } };
   }
 
   return withAuditedMutation(
@@ -144,12 +135,6 @@ export async function updateProduct(
             price: values.price,
             compareAtPrice: values.compareAtPrice ?? null,
             costPrice: values.costPrice ?? null,
-            sku: values.sku || null,
-            stock: values.stock,
-            lowStockThreshold: values.lowStockThreshold ?? null,
-            trackInventory: values.trackInventory,
-            continueSellingOutOfStock: values.continueSellingOutOfStock,
-            sizes: values.sizes,
             categoryId,
             collections: { set: collectionIds.map((cid) => ({ id: cid })) },
             tags: { set: tagIds.map((tid) => ({ id: tid })) },
@@ -259,6 +244,20 @@ export async function permanentlyDeleteProduct(id: string): Promise<SimpleAction
     return {
       success: false,
       error: `This product has ${reviewCount} review${reviewCount === 1 ? "" : "s"} and can't be permanently deleted.`,
+    };
+  }
+
+  // Module 6 (Inventory), Phase 3: ProductVariant cascades from Product,
+  // and StockMovement cascades from ProductVariant — hard-deleting the
+  // product would otherwise silently destroy its entire inventory audit
+  // trail. Checked via the denormalized productId on StockMovement (no
+  // join through ProductVariant needed), same precondition-before-delete
+  // pattern as the review check above.
+  const movementCount = await prisma.stockMovement.count({ where: { productId: id } });
+  if (movementCount > 0) {
+    return {
+      success: false,
+      error: `This product has inventory movement history and can't be permanently deleted.`,
     };
   }
 

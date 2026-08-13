@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, OrderStatus, PaymentStatus, FulfillmentStatus } from "@prisma/client";
 import { withAuditedBulkMutation, type BulkMutationOutcome } from "@/lib/admin/bulk-actions";
+import { restoreStockForCancelledOrder } from "@/lib/inventory/movements";
 import {
   resolveOrderStatusTransition,
   resolveOrderPaymentStatusTransition,
@@ -120,7 +121,26 @@ export async function bulkUpdateOrderStatus(ids: string[], targetStatus: OrderSt
       });
 
       if (eligibleIds.length > 0 && sharedData) {
-        await prisma.order.updateMany({ where: { id: { in: eligibleIds } }, data: sharedData });
+        if (targetStatus === "CANCELLED") {
+          // Module 6 (Inventory), Phase 3 — can't use the single batched
+          // updateMany every other bulk transition uses: restoring stock
+          // needs each order's own StockMovement rows, so each eligible
+          // order gets its own transaction (status update + restore
+          // together, same as the single-record action in
+          // app/admin/orders/[id]/actions.ts). Sequential, not
+          // Promise.all — keeps behavior identical to processing these
+          // one at a time, and avoids many concurrent transactions
+          // fighting over the same variant rows if two selected orders
+          // happen to share one.
+          for (const id of eligibleIds) {
+            await prisma.$transaction(async (tx) => {
+              await tx.order.update({ where: { id }, data: sharedData });
+              await restoreStockForCancelledOrder(tx, id);
+            });
+          }
+        } else {
+          await prisma.order.updateMany({ where: { id: { in: eligibleIds } }, data: sharedData });
+        }
       }
 
       revalidateOrders(eligibleIds);

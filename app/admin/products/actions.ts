@@ -40,19 +40,16 @@ export async function createProduct(raw: unknown): Promise<CreateProductResult> 
     }
   }
 
-  // Uniqueness checks happen before entering the audited mutation — a
-  // validation failure isn't a mutation worth auditing.
-  const [slugTaken, skuTaken] = await Promise.all([
-    prisma.product.findUnique({ where: { slug: values.slug }, select: { id: true } }),
-    values.sku
-      ? prisma.product.findUnique({ where: { sku: values.sku }, select: { id: true } })
-      : Promise.resolve(null),
-  ]);
+  // Uniqueness check happens before entering the audited mutation — a
+  // validation failure isn't a mutation worth auditing. (SKU uniqueness
+  // moved to ProductVariant in Module 6 Phase 3 — Product no longer has
+  // its own sku field to check.)
+  const slugTaken = await prisma.product.findUnique({
+    where: { slug: values.slug },
+    select: { id: true },
+  });
   if (slugTaken) {
     return { success: false, fieldErrors: { slug: "This URL slug is already in use." } };
-  }
-  if (skuTaken) {
-    return { success: false, fieldErrors: { sku: "This SKU is already in use." } };
   }
 
   return withAuditedMutation(
@@ -80,12 +77,6 @@ export async function createProduct(raw: unknown): Promise<CreateProductResult> 
             price: values.price,
             compareAtPrice: values.compareAtPrice ?? null,
             costPrice: values.costPrice ?? null,
-            sku: values.sku || null,
-            stock: values.stock,
-            lowStockThreshold: values.lowStockThreshold ?? null,
-            trackInventory: values.trackInventory,
-            continueSellingOutOfStock: values.continueSellingOutOfStock,
-            sizes: values.sizes,
             categoryId,
             collections: { connect: collectionIds.map((id) => ({ id })) },
             tags: { connect: tagIds.map((id) => ({ id })) },
@@ -101,6 +92,28 @@ export async function createProduct(raw: unknown): Promise<CreateProductResult> 
                 altText: m.altText,
                 position: index,
               })),
+            },
+            // Module 6 (Inventory), Phase 3. A brand-new product needs at
+            // least one variant to be purchasable at all — without this,
+            // AddToBag would have nothing to resolve and the product
+            // would be permanently "Sold out". This is the exact same
+            // default/legacy variant shape the Phase 3 migration gave
+            // every pre-existing product; real color/size variants (and
+            // their real stock) are added afterward from the Inventory
+            // section, same as the legacy migration's default variants
+            // are meant to be split.
+            variants: {
+              create: [
+                {
+                  color: null,
+                  size: null,
+                  variantKey: "-::-",
+                  stock: 0,
+                  trackInventory: true,
+                  continueSellingOutOfStock: false,
+                  isActive: true,
+                },
+              ],
             },
           },
         });
@@ -330,7 +343,23 @@ export async function bulkPermanentlyDeleteProducts(ids: string[]) {
         where: { id: { in: ids }, deletedAt: { not: null } },
         select: { id: true, media: { select: { providerId: true, type: true } } },
       });
-      const eligibleIds = eligible.map((p: { id: string }) => p.id);
+
+      // Module 6 (Inventory), Phase 3 — same precondition
+      // permanentlyDeleteProduct enforces for a single record: a product
+      // with any StockMovement history (via variants' cascade) must not
+      // be hard-deleted, or that history silently disappears along with
+      // it. Checked via the denormalized productId on StockMovement, no
+      // join needed.
+      const movementCounts = await prisma.stockMovement.groupBy({
+        by: ["productId"],
+        where: { productId: { in: eligible.map((p) => p.id) } },
+        _count: { _all: true },
+      });
+      const productIdsWithHistory = new Set(movementCounts.map((m) => m.productId));
+
+      const eligibleIds = eligible
+        .filter((p) => !productIdsWithHistory.has(p.id))
+        .map((p: { id: string }) => p.id);
 
       if (eligibleIds.length > 0) {
         // Cascades ProductMedia at the DB level; OrderItem.productId is
@@ -339,7 +368,10 @@ export async function bulkPermanentlyDeleteProducts(ids: string[]) {
         await prisma.product.deleteMany({ where: { id: { in: eligibleIds } } });
       }
 
-      const allMedia = eligible.flatMap((p: { media: { providerId: string; type: string }[] }) => p.media);
+      const eligibleIdSet = new Set(eligibleIds);
+      const allMedia = eligible
+        .filter((p) => eligibleIdSet.has(p.id))
+        .flatMap((p: { media: { providerId: string; type: string }[] }) => p.media);
       await Promise.all(
         allMedia.map((m: { providerId: string; type: string }) =>
           deleteMedia(m.providerId, m.type === "VIDEO" ? "video" : "image").catch(() => {})
@@ -350,7 +382,12 @@ export async function bulkPermanentlyDeleteProducts(ids: string[]) {
 
       const skipped = ids
         .filter((id) => !eligibleIds.includes(id))
-        .map((id) => ({ id, reason: "Only trashed products can be permanently deleted." }));
+        .map((id) => ({
+          id,
+          reason: productIdsWithHistory.has(id)
+            ? "Has inventory movement history and can't be permanently deleted."
+            : "Only trashed products can be permanently deleted.",
+        }));
 
       return { affectedIds: eligibleIds, skipped };
     }

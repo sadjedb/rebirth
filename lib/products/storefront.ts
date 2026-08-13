@@ -3,9 +3,16 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma, Category } from "@prisma/client";
 
 export type { Category };
-/** Every storefront query includes media (ordered by position) — the type
- *  reflects that so components can rely on `product.media` always existing. */
-export type Product = Prisma.ProductGetPayload<{ include: { media: true } }>;
+/** Every storefront query includes media (ordered by position) and
+ *  active variants (ordered for display) — the type reflects that so
+ *  components can rely on product.media/product.variants always
+ *  existing. Only isActive variants: an inactive one is deliberately
+ *  invisible to the storefront (Module 6 Phase 1 architecture — removed
+ *  from new purchasing, history preserved) even though it still exists
+ *  in the database. */
+export type Product = Prisma.ProductGetPayload<{
+  include: { media: true; variants: true };
+}>;
 
 /**
  * Every query in this file is customer-facing and enforces the same two
@@ -17,6 +24,9 @@ export type Product = Prisma.ProductGetPayload<{ include: { media: true } }>;
  * clause at every call site.
  */
 const STOREFRONT_WHERE = { status: "ACTIVE" as const, deletedAt: null };
+const ACTIVE_VARIANTS_INCLUDE = {
+  variants: { where: { isActive: true }, orderBy: { position: "asc" as const } },
+};
 
 /** Returns published products, optionally filtered by category slug. */
 export async function getProducts(categorySlug?: string): Promise<Product[]> {
@@ -26,7 +36,7 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
       category: categorySlug ? { slug: categorySlug } : undefined,
     },
     orderBy: { createdAt: "asc" },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: { media: { orderBy: { position: "asc" } }, ...ACTIVE_VARIANTS_INCLUDE },
   });
 }
 
@@ -34,7 +44,7 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   return prisma.product.findFirst({
     where: { slug, ...STOREFRONT_WHERE },
-    include: { media: { orderBy: { position: "asc" } } },
+    include: { media: { orderBy: { position: "asc" } }, ...ACTIVE_VARIANTS_INCLUDE },
   });
 }
 
@@ -48,7 +58,7 @@ export async function getRelatedProducts(
   return prisma.product.findMany({
     where: { ...STOREFRONT_WHERE, categoryId, slug: { not: excludeSlug } },
     take: limit,
-    include: { media: { orderBy: { position: "asc" } } },
+    include: { media: { orderBy: { position: "asc" } }, ...ACTIVE_VARIANTS_INCLUDE },
   });
 }
 

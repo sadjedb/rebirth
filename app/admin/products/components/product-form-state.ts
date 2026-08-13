@@ -24,13 +24,6 @@ export function productToFormState(product: AdminProductDetail): ProductFormStat
     compareAtPrice: product.compareAtPrice != null ? String(product.compareAtPrice) : "",
     costPrice: product.costPrice != null ? String(product.costPrice) : "",
 
-    sku: product.sku ?? "",
-    stock: String(product.stock),
-    lowStockThreshold: product.lowStockThreshold != null ? String(product.lowStockThreshold) : "",
-    trackInventory: product.trackInventory,
-    continueSellingOutOfStock: product.continueSellingOutOfStock,
-    sizes: product.sizes,
-
     category: product.category ? { kind: "existing", id: product.category.id } : null,
     collections: product.collections.map((c: { id: string }) => ({ kind: "existing" as const, id: c.id })),
     tags: product.tags.map((t: { id: string }) => ({ kind: "existing" as const, id: t.id })),

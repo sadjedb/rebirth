@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/audit";
 import { redeemCouponInTransaction, CouponRedemptionError } from "@/lib/coupons/redemption";
+import { decrementVariantStock, recordStockMovement } from "@/lib/inventory/movements";
 import type { CartItem } from "@/lib/cart-context";
 import type {
   Order as PrismaOrder,
@@ -15,6 +16,21 @@ import type {
 } from "@prisma/client";
 
 export { CouponRedemptionError };
+
+/** Module 6 (Inventory), Phase 3. Thrown inside createOrder's
+ *  transaction when a line's variant can't be purchased — either it's
+ *  gone/inactive, or trackInventory is on, continueSellingOutOfStock is
+ *  off, and stock is insufficient. Thrown (not returned), same as
+ *  CouponRedemptionError, so it propagates out of prisma.$transaction
+ *  and rolls back everything else the transaction did — coupon
+ *  redemption, every other line's decrement, the order itself. Never a
+ *  partially-fulfilled multi-line order. */
+export class OutOfStockError extends Error {
+  constructor(public readonly productName: string) {
+    super(`${productName} is no longer available in the requested quantity.`);
+    this.name = "OutOfStockError";
+  }
+}
 
 export const checkoutSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required"),
@@ -120,6 +136,10 @@ function toOrder(row: OrderRow): Order {
       // historical order rows. Harmless here — display only, never used
       // for cart-style remove/quantity actions the way a live CartItem is.
       productId: item.productId ?? "",
+      // Same coalescing for variantId — null on pre-Module-6 orders and
+      // on any order whose variant was later deactivated/removed. Also
+      // display-only here.
+      variantId: item.variantId ?? "",
       slug: item.slug,
       name: item.name,
       code: item.code,
@@ -127,6 +147,7 @@ function toOrder(row: OrderRow): Order {
       tone: item.tone,
       icon: item.icon,
       size: item.size,
+      color: item.color,
       quantity: item.quantity,
     })),
   };
@@ -137,32 +158,55 @@ export async function createOrder(
   items: CartItem[],
   userId?: string
 ): Promise<Order> {
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  if (items.length === 0) {
+    throw new Error("Cannot create an order with no items.");
+  }
 
-  // sku isn't part of CartItem (the cart is built from public product
-  // listing data, which doesn't carry it) — look it up now, at the
-  // moment of purchase, the same way every other line-item field is
-  // snapshotted. This is still a snapshot: once written to OrderItem it
-  // never changes even if the product's sku is edited or removed later.
-  const productIds = [...new Set(items.map((i) => i.productId).filter(Boolean))];
-  const skuByProductId = new Map(
-    productIds.length
-      ? (
-          await prisma.product.findMany({
-            where: { id: { in: productIds } },
-            select: { id: true, sku: true },
-          })
-        ).map((p: { id: string; sku: string | null }) => [p.id, p.sku] as const)
-      : []
-  );
+  const variantIds = [...new Set(items.map((i) => i.variantId).filter(Boolean))];
 
   const row = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // Resolved inside the same transaction as the redemption guard below,
+    // Resolve every line's variant fresh, inside the transaction — the
+    // client is never trusted for price, stock, availability, or variant
+    // ownership (Module 6 architecture, Checkout Integration). A cart
+    // built from stale/tampered localStorage data fails here before
+    // anything is written.
+    const variants = await tx.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      select: {
+        id: true,
+        productId: true,
+        color: true,
+        size: true,
+        sku: true,
+        isActive: true,
+        product: {
+          select: { id: true, slug: true, name: true, code: true, price: true, tone: true, icon: true },
+        },
+      },
+    });
+    const variantById = new Map(variants.map((v) => [v.id, v] as const));
+
+    const resolvedItems = items.map((item) => {
+      const variant = variantById.get(item.variantId);
+      if (!variant || variant.productId !== item.productId || !variant.isActive) {
+        throw new OutOfStockError(item.name);
+      }
+      return { cartItem: item, variant };
+    });
+
+    // Price always comes from the freshly-read Product row, never the
+    // client-held cart — see the comment above.
+    const subtotal = resolvedItems.reduce(
+      (sum, { cartItem, variant }) => sum + variant.product.price * cartItem.quantity,
+      0
+    );
+
+    // Resolved inside the same transaction as the stock decrement below,
     // even though it doesn't itself need atomicity — keeping the whole
     // "figure out totals, then write the order" sequence in one
     // transaction means a coupon race-loss (thrown by
-    // redeemCouponInTransaction) cleanly rolls back everything, not just
-    // the coupon row.
+    // redeemCouponInTransaction) or an out-of-stock line cleanly rolls
+    // back everything, not just its own piece.
     let discountTotal = 0;
     let couponId: string | null = null;
     if (input.couponCode) {
@@ -176,7 +220,7 @@ export async function createOrder(
     // their schema default of 0), same as before coupons existed.
     const total = subtotal - discountTotal;
 
-    return tx.order.create({
+    const order = await tx.order.create({
       data: {
         userId,
         placedBy: "CUSTOMER",
@@ -207,23 +251,69 @@ export async function createOrder(
           ],
         },
         items: {
-          create: items.map((item) => ({
-            productId: item.productId,
-            slug: item.slug,
-            name: item.name,
-            code: item.code,
-            sku: skuByProductId.get(item.productId) ?? null,
-            price: item.price,
-            lineTotal: item.price * item.quantity,
-            tone: item.tone,
-            icon: item.icon,
-            size: item.size,
-            quantity: item.quantity,
+          create: resolvedItems.map(({ cartItem, variant }) => ({
+            productId: variant.productId,
+            variantId: variant.id,
+            slug: variant.product.slug,
+            name: variant.product.name,
+            code: variant.product.code,
+            // Sourced from ProductVariant.sku as of Module 6 Phase 3 —
+            // Product no longer has its own sku. Field name/shape on
+            // OrderItem is unchanged; only the data source moved.
+            sku: variant.sku,
+            price: variant.product.price,
+            lineTotal: variant.product.price * cartItem.quantity,
+            tone: variant.product.tone ?? "#E4E0D6",
+            icon: variant.product.icon ?? "tee",
+            size: variant.size ?? "",
+            color: variant.color,
+            quantity: cartItem.quantity,
           })),
         },
       },
       include: { items: true, addresses: true },
     });
+
+    // Stock decrement + one StockMovement per line, now that the order
+    // (and each OrderItem's variantId) exists. Sequential, not
+    // Promise.all: if the same variant appears on two lines in one
+    // order, the second decrement must see the first one's committed
+    // write, which decrementVariantStock's guarded update only gets
+    // right when each call reads the variant fresh immediately before
+    // it runs.
+    for (const orderItem of order.items) {
+      if (!orderItem.variantId) continue; // never happens here — every line above was created with a variantId — but keeps this loop's typing honest.
+
+      const freshVariant = await tx.productVariant.findUniqueOrThrow({
+        where: { id: orderItem.variantId },
+        select: {
+          id: true,
+          productId: true,
+          stock: true,
+          trackInventory: true,
+          continueSellingOutOfStock: true,
+        },
+      });
+
+      const decrement = await decrementVariantStock(tx, freshVariant, orderItem.quantity);
+      if (!decrement.ok) {
+        // Rolls back the entire transaction — coupon redemption, every
+        // other line's decrement, the order itself. Never a
+        // partially-fulfilled order.
+        throw new OutOfStockError(orderItem.name);
+      }
+
+      await recordStockMovement(tx, {
+        variantId: freshVariant.id,
+        productId: freshVariant.productId,
+        quantityDelta: decrement.appliedDelta,
+        resultingStock: decrement.resultingStock,
+        reason: "ORDER_PLACED",
+        orderId: order.id,
+      });
+    }
+
+    return order;
   });
 
   // Not withAuditedMutation — this isn't an admin action gated by a
@@ -235,7 +325,7 @@ export async function createOrder(
     action: "order.create",
     entityType: "Order",
     entityId: row.id,
-    metadata: { orderNumber: row.orderNumber, total: row.total },
+    metadata: { orderNumber: row.orderNumber, total: row.total, itemCount: row.items.length },
   });
 
   return toOrder(row);

@@ -14,6 +14,7 @@ import {
   resolveOrderFulfillmentStatusTransition,
   getOrderCompletionRequirements,
 } from "@/lib/orders/status";
+import { restoreStockForCancelledOrder } from "@/lib/inventory/movements";
 import {
   updateOrderStatusSchema,
   updatePaymentStatusSchema,
@@ -92,7 +93,22 @@ export async function updateOrderStatus(
     capability,
     { action: audit.action, entityType: "Order" },
     async () => {
-      await prisma.order.update({ where: { id }, data: transition.data as Prisma.OrderUpdateInput });
+      // Module 6 (Inventory), Phase 3 — CANCELLED is the only order
+      // status transition that restores stock, and this is the only
+      // place it can fire from (the state machine above already
+      // guarantees CANCELLED is never reached more than once, since it's
+      // not a source state for any further transition — see
+      // lib/orders/status.ts). Restoration and the order's own status
+      // update happen in one transaction: either both commit or neither
+      // does.
+      if (to === "CANCELLED") {
+        await prisma.$transaction(async (tx) => {
+          await tx.order.update({ where: { id }, data: transition.data as Prisma.OrderUpdateInput });
+          await restoreStockForCancelledOrder(tx, id);
+        });
+      } else {
+        await prisma.order.update({ where: { id }, data: transition.data as Prisma.OrderUpdateInput });
+      }
       revalidateOrder(id);
       return { result: { success: true as const }, entityId: id, metadata: audit.metadata };
     }
