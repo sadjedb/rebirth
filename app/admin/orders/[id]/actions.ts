@@ -94,17 +94,26 @@ export async function updateOrderStatus(
     { action: audit.action, entityType: "Order" },
     async () => {
       // Module 6 (Inventory), Phase 3 — CANCELLED is the only order
-      // status transition that restores stock, and this is the only
-      // place it can fire from (the state machine above already
-      // guarantees CANCELLED is never reached more than once, since it's
-      // not a source state for any further transition — see
-      // lib/orders/status.ts). Restoration and the order's own status
-      // update happen in one transaction: either both commit or neither
-      // does.
+      // status transition that restores stock. The state machine
+      // guarantees CANCELLED can't be re-entered SEQUENTIALLY (it's not
+      // a valid `from` for any further transition) — but that alone
+      // doesn't stop two CONCURRENT cancel requests (a double-click, two
+      // admin tabs) from both reading the same pre-cancel status before
+      // either commits. `status: existing.status` on the update turns
+      // this into a compare-and-swap: only the request that actually
+      // wins the race performs the status change, and restoration only
+      // runs for that winner. A losing concurrent request's updateMany
+      // matches zero rows and is a harmless no-op, not a double
+      // restoration.
       if (to === "CANCELLED") {
         await prisma.$transaction(async (tx) => {
-          await tx.order.update({ where: { id }, data: transition.data as Prisma.OrderUpdateInput });
-          await restoreStockForCancelledOrder(tx, id);
+          const guarded = await tx.order.updateMany({
+            where: { id, status: existing.status },
+            data: transition.data as Prisma.OrderUpdateInput,
+          });
+          if (guarded.count === 1) {
+            await restoreStockForCancelledOrder(tx, id);
+          }
         });
       } else {
         await prisma.order.update({ where: { id }, data: transition.data as Prisma.OrderUpdateInput });

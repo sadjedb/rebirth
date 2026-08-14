@@ -82,11 +82,14 @@ export default async function OrderConfirmationPage({
             <div className="px-6 py-5">
               {order.items.map((item) => (
                 <div
-                  key={`${item.productId}::${item.size}`}
+                  key={item.id}
                   className="flex items-center justify-between text-sm py-2"
                 >
                   <span className="text-sumi">
-                    {item.name} <span className="text-stone">· {item.size} × {item.quantity}</span>
+                    {item.name}{" "}
+                    <span className="text-stone">
+                      · {[item.color, item.size].filter(Boolean).join(" / ")} × {item.quantity}
+                    </span>
                   </span>
                   <span className="font-mono text-sumi">
                     {formatMoney(item.price * item.quantity, order.currency)}

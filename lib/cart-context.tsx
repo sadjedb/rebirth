@@ -124,7 +124,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      dispatch({ type: "HYDRATE", items: raw ? JSON.parse(raw) : [] });
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      // Module 6 (Inventory), Phase 3 — a cart persisted before this
+      // change has items shaped like { productId, size, ... } with no
+      // variantId at all. Silently keeping those would produce lines
+      // whose lineKey() is undefined (broken quantity/remove actions)
+      // and whose variantId is undefined at checkout (a guaranteed
+      // OutOfStockError). Filtering them out here — rather than trying
+      // to guess a variant for old data — is the same "drop what can't
+      // be trusted, don't fabricate" principle the Phase 3 migration
+      // itself uses for Product.sizes. The customer sees an empty cart
+      // instead of a broken one; re-adding items uses the new,
+      // variant-aware flow.
+      const items = Array.isArray(parsed)
+        ? parsed.filter((item): item is CartItem => typeof item?.variantId === "string" && item.variantId.length > 0)
+        : [];
+      dispatch({ type: "HYDRATE", items });
     } catch {
       dispatch({ type: "HYDRATE", items: [] });
     }

@@ -132,10 +132,25 @@ export async function bulkUpdateOrderStatus(ids: string[], targetStatus: OrderSt
           // one at a time, and avoids many concurrent transactions
           // fighting over the same variant rows if two selected orders
           // happen to share one.
+          //
+          // Same compare-and-swap guard as the single-record action:
+          // `status: order's own prior status` on the update means a
+          // concurrent cancellation of the same order (from the
+          // single-record page, or another overlapping bulk action)
+          // can't cause a double restoration — the loser's updateMany
+          // matches zero rows and restoreStockForCancelledOrder is
+          // skipped for it.
+          const priorStatusById = new Map(orders.map((o) => [o.id, o.status] as const));
           for (const id of eligibleIds) {
+            const priorStatus = priorStatusById.get(id);
             await prisma.$transaction(async (tx) => {
-              await tx.order.update({ where: { id }, data: sharedData });
-              await restoreStockForCancelledOrder(tx, id);
+              const guarded = await tx.order.updateMany({
+                where: { id, status: priorStatus },
+                data: sharedData,
+              });
+              if (guarded.count === 1) {
+                await restoreStockForCancelledOrder(tx, id);
+              }
             });
           }
         } else {

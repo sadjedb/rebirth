@@ -62,7 +62,15 @@ export type Order = {
   id: string;
   orderNumber: number;
   userId?: string | null;
-  items: CartItem[];
+  /** Not just CartItem[] — each historical line item also carries its own
+   *  database id. A live cart line's identity is its variantId (one line
+   *  per variant, enforced by the cart reducer), but a *historical* order
+   *  can legitimately contain two lines with the same variantId
+   *  coalesced to "" (two pre-Module-6 orders' items whose product was
+   *  since deleted) or, before Module 6, could already collide on
+   *  productId+size — only the row's own id is guaranteed unique here.
+   *  See the order-confirmation page's use of this as a React key. */
+  items: (CartItem & { id: string })[];
   subtotal: number;
   /** Populated by lib/coupons/redemption.ts when a coupon was applied at
    *  checkout; 0 otherwise. Never negative, never exceeds subtotal. */
@@ -132,6 +140,7 @@ function toOrder(row: OrderRow): Order {
     fulfillmentStatus: row.fulfillmentStatus,
     createdAt: row.createdAt.toISOString(),
     items: row.items.map((item: PrismaOrderItem) => ({
+      id: item.id,
       // Coalesced: a permanently-deleted product leaves productId null on
       // historical order rows. Harmless here — display only, never used
       // for cart-style remove/quantity actions the way a live CartItem is.
@@ -303,14 +312,24 @@ export async function createOrder(
         throw new OutOfStockError(orderItem.name);
       }
 
-      await recordStockMovement(tx, {
-        variantId: freshVariant.id,
-        productId: freshVariant.productId,
-        quantityDelta: decrement.appliedDelta,
-        resultingStock: decrement.resultingStock,
-        reason: "ORDER_PLACED",
-        orderId: order.id,
-      });
+      // trackInventory = false → no stock mutation AND no StockMovement
+      // (per the Module 6 architecture's checkout algorithm — an
+      // untracked variant's purchases shouldn't populate its ledger at
+      // all). Same reasoning for a zero appliedDelta under
+      // continueSellingOutOfStock (fully oversold, counter already at
+      // floor): a StockMovement represents something that actually
+      // happened to the counter — see restoreStockForCancelledOrder's
+      // identical skip for zero-delta compensating movements.
+      if (freshVariant.trackInventory && decrement.appliedDelta !== 0) {
+        await recordStockMovement(tx, {
+          variantId: freshVariant.id,
+          productId: freshVariant.productId,
+          quantityDelta: decrement.appliedDelta,
+          resultingStock: decrement.resultingStock,
+          reason: "ORDER_PLACED",
+          orderId: order.id,
+        });
+      }
     }
 
     return order;
