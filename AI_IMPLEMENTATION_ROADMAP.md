@@ -13,7 +13,7 @@ The AI should **always continue from this document** instead of redesigning prev
 
 ---
 
-# Project Status
+# Project Statuss
 
 ```text
 Module 0  — Core Infrastructure         DONE
@@ -417,7 +417,7 @@ Reusable infrastructure this module added:
   `app/admin/coupons/validators.ts`
 - `CouponEffectiveStateBadge` (derived display state, separate from the
   persisted `status` enum — `getCouponEffectiveState` combines `status`
-  + `startsAt`/`endsAt`, never auto-transitions anything)
+  - `startsAt`/`endsAt`, never auto-transitions anything)
 - Checkout coupon-code apply/remove UI
   (`components/checkout/CouponCodeInput.tsx`)
 
